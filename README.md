@@ -13,7 +13,7 @@ Once you have succesfully logged in, you will be redirected to the Nimbix Jarvic
 1.  Click compute on the right hand side of the dashboard
 2.  Type mldl_education to find the class application
 3.  Click the lock icon in the application tile
-![](https://github.com/dustinvanstee/random-public-files/raw/master/ss1.png)
+![](https://github.com/dustinvanstee/random-public-files/raw/master/ss2.png)
 
 ---
 Next click on the server button to deploy the server
