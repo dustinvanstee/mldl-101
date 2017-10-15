@@ -27,5 +27,5 @@ else
 fi
 
 echo "Starting Jupyter"
-jupyter notebook --ip=0.0.0.0 --allow-root --port=5050 > >(tee -a /tmp/tensorflow.stdout.log) 2> >(tee -a /tmp/tensorflow.log >&2) &
+jupyter notebook --ip=0.0.0.0 --allow-root --port=5050 --NotebookApp.token="" --no-browser> >(tee -a /tmp/tensorflow.stdout.log) 2> >(tee -a /tmp/tensorflow.log >&2) &
 #tensorboard --logdir=/data/mldl-101/graphs &
