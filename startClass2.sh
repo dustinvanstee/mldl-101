@@ -1,4 +1,20 @@
 #!/bin/bash
+help () {
+  echo "example usage : startClass2.sh -g 1"
+  echo "Arguments :"
+  echo "-g [0|1] , 0=\"cpu only nimbix image\", 1=\"gpu nimbix image\""
+}
+
+
+
+if [ $# -eq 0 ]; then
+    echo "No arguments provided... see example usage\n\n"
+    help
+    exit 1
+fi
+
+# Parse arguments"
+
 gpu_mode=0
 while getopts g: opt; do
   case $opt in
