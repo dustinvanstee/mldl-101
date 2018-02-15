@@ -7,6 +7,7 @@ import argparse as ap
 import os
 import numpy as np
 import cv2
+import sys
 
 import tensorflow as tf
 from keras import backend as K
@@ -78,6 +79,21 @@ class yolo_demo(object):
         cap.release()
         cv2.destroyAllWindows()
 
+    def get_image_shape(self, dim="height"):
+        rv = None
+        if(self.image_shape == None) :
+            self.set_image_shape()
+
+        if(dim == "height") :
+            rv = self.image_shape[0]
+        elif (dim == "width") :
+            rv = self.image_shape[1]
+        elif (dim == "channels") :
+            rv = self.image_shape[2]
+        else :
+            print("error")
+        return rv
+
 
     def yolo_eval(self,  max_boxes=10, score_threshold=.6, iou_threshold=.5):
         """
@@ -100,34 +116,48 @@ class yolo_demo(object):
         classes -- tensor of shape (None,), predicted class for each box
         """
 
-        ### START CODE HERE ###
-
-        # Retrieve outputs of the YOLO model (≈1 line)
+        # Retrieve outputs of the YOLO model
+        # This output contains the boxes for the entire batch
         box_xy, box_wh, box_confidence, box_class_probs = self.yolo_outputs
 
         # Convert boxes to be ready for filtering functions
-        boxes = yad2k.yolo_boxes_to_corners(box_xy, box_wh)
+        box_corners = yad2k.yolo_boxes_to_corners(box_xy, box_wh)
 
-        # Use one of the functions you've implemented to perform Score-filtering with a threshold of score_threshold (≈1 line)
-        all_scores, all_boxes, all_classes = self.yolo_filter_boxes(box_class_probs=box_class_probs,box_confidence=box_confidence,boxes=boxes,threshold=iou_threshold)
+        # use a for loop, and lets see what happens ...
+        #trainable=False
+        # all_scores = tf.get_variable(name="all_scores",shape=(),initializer=tf.zeros_initializer(),dtype=tf.float32,collections=[tf.GraphKeys.LOCAL_VARIABLES])
 
-        # Scale boxes back to original image shape.
-        all_boxes = scale_boxes(all_boxes, self.image_shape)
+        all_boxes = []
+        all_scores = []
+        all_classes = []
 
-        # Use one of the functions you've implemented to perform Non-max suppression with a threshold of iou_threshold (≈1 line)
-        scores, boxes, classes = self.yolo_non_max_suppression(all_scores, all_boxes, all_classes, max_boxes, iou_threshold)
+        for m in range(0,self.batch_size) :
+            tmp_box_class_probs = tf.slice(box_class_probs, [m,0,0,0,0], [1,19,19,5,80], name=None)
+            tmp_boxes = tf.slice(box_corners, [m,0,0,0,0], [1,19,19,5,4], name=None)
+            tmp_confidence = tf.slice(box_confidence, [m,0,0,0,0], [1,19,19,5,1], name=None)
 
-        ### END CODE HERE ###
 
-        return scores, boxes, classes
+            tmp_scores, tmp_boxes, tmp_classes = self.yolo_filter_boxes(box_class_probs=tmp_box_class_probs,box_confidence=tmp_confidence,boxes=tmp_boxes,threshold=iou_threshold)
+
+            # Scale boxes back to original image shape.
+            tmp_scaled_boxes = scale_boxes(tmp_boxes, self.image_shape)
+
+            # Use one of the functions you've implemented to perform Non-max suppression with a threshold of iou_threshold (≈1 line)
+            ts,tb,tc = self.yolo_non_max_suppression(tmp_scores, tmp_scaled_boxes, tmp_classes, max_boxes, iou_threshold)
+
+            all_scores.append(ts)
+            all_boxes.append(tb)
+            all_classes.append(tc)
+
+        return all_scores, all_boxes, all_classes
 
     def yolo_filter_boxes(self, box_confidence, boxes, box_class_probs, threshold = .6):
         """Filters YOLO boxes by thresholding on object and class confidence.
         
         Arguments:
-        box_confidence -- tensor of shape (19, 19, 5, 1)
-        boxes -- tensor of shape (19, 19, 5, 4)
-        box_class_probs -- tensor of shape (19, 19, 5, 80)
+        box_confidence -- tensor of shape (?,19, 19, 5, 1)
+        boxes -- tensor of shape (?,19, 19, 5, 4)
+        box_class_probs -- tensor of shape (?,19, 19, 5, 80)
         threshold -- real value, if [ highest class probability score < threshold], then get rid of the corresponding box
         
         Sets :
@@ -148,6 +178,7 @@ class yolo_demo(object):
         ### END CODE HERE ###
 
         # Step 2: Find the box_classes thanks to the max box_scores, keep track of the corresponding score
+        # Basically pick the highest probablity category for each anchor box and each grid location
         ### START CODE HERE ### (≈ 2 lines)
         box_classes = K.argmax(box_scores, axis=-1)
         box_class_scores = K.max(box_scores, axis=-1)
@@ -206,28 +237,56 @@ class yolo_demo(object):
 
 
 
-    def preprocess_imagev2(self, image):
+    def preprocess_image_cpu(self, image):
+        '''
+        
+
+        :param image: a 4D tensor.  (batch_size,H,W,RGB)
+        
+        :config self.rotation - degrees to rotate image.  Did this because opencv rotates the mpg files for some reason
+        
+        :return: 
+            rv_rotated_image : a 4D tensor with the original image rotated (not scaled) (batch_size,H,W,RGB)
+            rv_scaled_image : a 4D tensor with the original image rotated and scaled down.  
+        '''
 
         # Make sure model image size are ints ...
         model_image_size = tuple(map( (lambda x : int(x)), self.yolo_model_image_shape))
 
-        rows,cols,rgb = image.shape
+        examples,rows,cols,rgb = image.shape
 
         M = cv2.getRotationMatrix2D((cols/2,rows/2),self.rotation,1)
-        rotated_image1 = cv2.warpAffine(image,M,(cols,rows))
 
-        resized_image1 = cv2.resize(rotated_image1,model_image_size,cv2.INTER_CUBIC)
-        resized_image2 = np.array(resized_image1, dtype='float32')
-        resized_image3 = resized_image2 / 255.0
-        #plot_image(resized_image3)
+        rv_rotated_image = np.zeros((examples,rows,cols,rgb))
+        rv_scaled_image = np.zeros((examples,model_image_size[0],model_image_size[1],rgb))
 
-        expanded_image4 = np.expand_dims(resized_image3, 0)  # Add batch dimension.
-        # Create a PIL image
-        # pil_image = Image.fromarray(rotated_image1,mode='RGB')
-        # pil_image.show()
-        return rotated_image1,expanded_image4
+        for i in range(0,examples) :
+            cur_image = image[i]
+
+            rotated_image1 = cv2.warpAffine(cur_image,M,(cols,rows))
+            resized_image1 = cv2.resize(rotated_image1,model_image_size,cv2.INTER_CUBIC)
+            resized_image2 = np.array(resized_image1, dtype='float32')
+            resized_image3 = resized_image2 / 255.0
+            #expanded_image4 = np.expand_dims(resized_image3, 0)  # Add batch dimension.
+            rv_rotated_image[i] = rotated_image1
+            #plot_image(rv_rotated_image[i].astype('uint8'))
+
+            rv_scaled_image[i] = resized_image3
+            #plot_image(resized_image3)
+
+        return rv_rotated_image,rv_scaled_image
+
 
     def draw_boxes(self, image_data, out_scores, out_boxes, out_classes, colors):
+        '''
+        
+        :param image_data: h,w,c tensor
+        :param out_scores: 
+        :param out_boxes: 
+        :param out_classes: 
+        :param colors: 
+        :return:  image_data: h,w,c tensor
+        '''
         # assert(image_data.shape == (1920,1920,3))
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names[c]
@@ -279,15 +338,9 @@ class yolo_demo(object):
         Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
         
         Arguments:
-        sess -- your tensorflow/Keras session containing the YOLO graph
-        image_file -- name of an image stored in the "images" folder.
         
         Returns:
-        out_scores -- tensor of shape (None, ), scores of the predicted boxes
-        out_boxes -- tensor of shape (None, 4), coordinates of the predicted boxes
-        out_classes -- tensor of shape (None, ), class index of the predicted boxes
         
-        Note: "None" actually represents the number of predicted boxes, it varies between 0 and max_boxes. 
         """
 
 
@@ -295,17 +348,19 @@ class yolo_demo(object):
 
         loop_cnt = 0
         num_frames_to_show = 20
-        frame = None
+        frame = np.ones((16,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
         while(cap.isOpened() and loop_cnt < num_frames_to_show ):
-            # frame is an ndarray
+            # frame is an ndarray of nhwc
+            for j in range(0,self.batch_size) :
+                ret,  frame[j] = cap.read()
+                for i in range(0, self.frame_stride) :
+                    ret, dummy_frame = cap.read()
 
-            for i in range(0, self.frame_stride) :
-                ret, frame = cap.read()
 
             # Load an color image in grayscale
             #frame = cv2.imread('/data/work/osa/2018-01-yolo/coursera/cnn/week3/AutonDriving/images/test.jpg')
             # frame = cv2.imread(self.input_stream)
-            print(frame.shape)
+            print("Frame shape = {}".format(frame.shape))
             # (1080, 1920, 3)
             # assert(frame.shape == (1080,1920,3))
 
@@ -315,29 +370,30 @@ class yolo_demo(object):
             #assert(frame.shape == (1920,1920,3))
 
             # preprocess returns a 4D tensor (examples, x, y, RGB)
-            image_rotate, image_data = self.preprocess_imagev2(frame)
 
-            #plot_image(image_rotate)
+            image_rotate, image_data = self.preprocess_image_cpu(frame)
+
             # can plot image data b/c of added dimension ... plot_image(image_data)
 
             # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
             out_boxes, out_scores, out_classes = self.sess.run([self.boxes, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
 
             # Print predictions info
-            print('Found {} boxes for current frame'.format(len(out_boxes)))
+            for i in range(0,self.batch_size):
+                print('Found {} boxes for current batch {}'.format(len(out_boxes[i]),i))
+
             # Generate colors for drawing bounding boxes.
             colors = generate_colors(self.class_names)
             # Draw bounding boxes on the image file
             #draw_boxes(image, out_scores, out_boxes, out_classes, class_names, colors)
-            image_modified = self.draw_boxes(image_data=image_rotate, out_scores=out_scores, out_boxes=out_boxes, out_classes=out_classes, colors=colors)
 
-            # plot_image(image_modified)
-            # Display the resulting frame
-            cv2.imshow('frame',image_modified)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-
+            for m in range(0,self.batch_size):
+                image_modified = self.draw_boxes(image_data=image_rotate[m], out_scores=out_scores[m], out_boxes=out_boxes[m], out_classes=out_classes[m], colors=colors)
+                # plot_image(image_modified)
+                # Display the resulting frame
+                cv2.imshow('frame',image_modified.astype('uint8'))
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
             loop_cnt += 1
 
@@ -346,6 +402,37 @@ class yolo_demo(object):
 
 
 #################### End Class yolo_demo ################################
+
+
+import threading
+import queue
+# Shared queue
+queue = queue.Queue
+
+class threaded_yolo(threading.Thread):
+    '''
+    Class : threaded_yolo
+      1. uses a shared queue to process a video stream via tensor flow yolo algorithm
+      2. loads shared queue 
+      3. video consumer used to display results when available
+    '''
+    def __init__(self, queue):
+        threading.Thread.__init__(self)
+        self.queue = queue
+        self.frame_rate = 1.0 # process every second
+
+    def process_video(self):
+        # Processes a video stream and loads tensor into shared queue
+
+        startIndex = self.queue.get()
+        self.getBluepediaLabels(startIndex, startIndex+threadPageFetchOffset)
+        self.queue.task_done()
+
+    def consume_processed_video(self):
+        # seperate thread to draw boxes and display results
+        a=1
+
+#################### End Class threaded_yolo ################################
 
 class SmartFormatterMixin(ap.HelpFormatter):
     # ref:
@@ -423,10 +510,7 @@ def generate_colors(class_names):
 def scale_boxes(boxes, image_shape):
     """ Scales the predicted boxes in order to be drawable on the image"""
 
-    print("scale_boxes")
-    print("image_shape = ")
-    print(image_shape)
-
+    nprint("image_shape = {}".format(image_shape))
     height = float(image_shape[0])
     width = float(image_shape[1])
     image_dims = K.stack([height, width, height, width])
@@ -435,9 +519,14 @@ def scale_boxes(boxes, image_shape):
     return boxes
 
 def plot_image(img) :
+    assert(img.dtype.name == 'uint8')
+
     cv2.imshow('image',img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+def nprint(mystring) :
+    print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
 def main():
