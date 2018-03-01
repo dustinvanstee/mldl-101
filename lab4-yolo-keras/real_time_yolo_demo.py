@@ -1,5 +1,5 @@
 '''
-Program that reads in a video stream and outputs an object detection stream 
+Program that reads in a video stream and outputs an object detection stream  [WIP]
 
 credits :
   https://www.ibm.com/developerworks/aix/library/au-threadingpython/

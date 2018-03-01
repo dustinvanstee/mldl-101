@@ -1,17 +1,19 @@
 '''
-Program that reads in a video stream and outputs an object detection stream 
+Program that reads in a video stream and outputs an object detection stream
 
-credits :
-  https://www.ibm.com/developerworks/aix/library/au-threadingpython/
-  https://www.troyfawkes.com/learn-python-multithreading-queues-basics/
+Note : use your python virtual env : 
+ 'source  ~/.virtualenvs/coursera_env/bin/activate' (home)
+ 'source  /root/python3_env/bin/activate' (nimbix)
 '''
 
 # add imports here ..
 import argparse as ap
 import os
 import numpy as np
-import sys
 import cv2
+import sys
+import re
+
 import tensorflow as tf
 from keras import backend as K
 from keras.layers import Input, Lambda, Conv2D
@@ -20,21 +22,13 @@ from yolo_utils import read_classes, read_anchors, generate_colors, preprocess_i
 import yad2k.models.keras_yolo as yad2k
 import random
 import colorsys
-import time
-
-
-from threading import Thread
-import queue
-
-
-# Shared queue
-queue = queue.Queue()
 
 # Globals
-yolo_graph = None
+MODEL_PATH = "./model_data/yolo.h5"
 
-# Constants
-MODEL_PATH = "/data/work/git-repos/yad2k/model_data/yolo.h5"
+
+def nprint(mystring) :
+    print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
 class yolo_demo(object):
@@ -53,7 +47,7 @@ class yolo_demo(object):
         self.batch_size = batch_size
         self.frame_stride = frame_stride
         self.image_shape = image_shape # in future, auto set this ...
-        self.rotation = rotation
+        self.rotation = self.get_rotation()
         self.yolo_model_image_shape = (608.0,608.0)
         self.yolo_model = None
         self.yolo_outputs = None
@@ -61,11 +55,27 @@ class yolo_demo(object):
         self.boxes = None
         self.classes = None
 
+    def get_rotation(self):
+        if( re.search("\.mov", self.input_stream)) :
+            rv = 270
+        elif( re.search("\.mp4", self.input_stream)) :
+            rv = 0
+        else :
+            nprint("warning, unhandled file extenstion.  Currently support *.mov/*.mp4")
+            rv = 0
+        nprint("Rotation set to : " + str(rv) + " degrees")
+        return rv
+    
     def load_and_build_graph(self) :
+        nprint("Loading Model")
         self.yolo_model = load_model(MODEL_PATH)
-        #yolo_model.summary()
+        nprint("Instantiating graph (yolo_head)")
         self.yolo_outputs = yad2k.yolo_head(self.yolo_model.output, self.anchors, len(self.class_names))
+        nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
         self.scores, self.boxes, self.classes = self.yolo_eval() # sets self.scores, self.boxes, self.classes structures
+
+    def print_model_summary(self):
+        print(self.yolo_model.summary())
 
     def build_model(self) :
         '''
@@ -89,7 +99,7 @@ class yolo_demo(object):
         # open input stream just once and cache ....
         cap = cv2.VideoCapture(self.input_stream)
         ret, frame = cap.read()
-        print("Setting self.image_shape to {0}".format(frame.shape))
+        nprint("Setting self.image_shape to {0}".format(frame.shape))
         self.image_shape = frame.shape
         cap.release()
         cv2.destroyAllWindows()
@@ -106,7 +116,7 @@ class yolo_demo(object):
         elif (dim == "channels") :
             rv = self.image_shape[2]
         else :
-            print("error")
+            nprint("error")
         return rv
 
 
@@ -255,7 +265,6 @@ class yolo_demo(object):
     def preprocess_image_cpu(self, image):
         '''
         
-
         :param image: a 4D tensor.  (batch_size,H,W,RGB)
         
         :config self.rotation - degrees to rotate image.  Did this because opencv rotates the mpg files for some reason
@@ -267,9 +276,12 @@ class yolo_demo(object):
 
         # Make sure model image size are ints ...
         model_image_size = tuple(map( (lambda x : int(x)), self.yolo_model_image_shape))
-
         examples,rows,cols,rgb = image.shape
 
+        nprint("Yolo model image size requirement = {}".format(model_image_size))
+        nprint("Raw  input image size             = {} {} {}".format(rows,cols,rgb))
+
+        # Opencv method to rotate images
         M = cv2.getRotationMatrix2D((cols/2,rows/2),self.rotation,1)
 
         rv_rotated_image = np.zeros((examples,rows,cols,rgb))
@@ -308,7 +320,7 @@ class yolo_demo(object):
             box = out_boxes[i]
             score = out_scores[i]
 
-            print("score = {0}, boxes={1}".format(score,box))
+            nprint("score = {0}, boxes={1}".format(score,box))
             label = '{} {:.2f}'.format(predicted_class, score)
 
             # label_size = draw.textsize(label, font)
@@ -319,7 +331,7 @@ class yolo_demo(object):
 
             bottom = min(image_data.shape[0], np.floor(bottom + 0.5).astype('int32'))
             right = min(image_data.shape[1], np.floor(right + 0.5).astype('int32'))
-            print(label, (left, top), (right, bottom))
+            nprint("{0} {1} {2}".format(label, (left, top), (right, bottom) ))
 
             #if top - label_size[1] >= 0:
             #    text_origin = np.array([left, top - label_size[1]])
@@ -347,8 +359,30 @@ class yolo_demo(object):
         return image_data
 
 
+    def play_video(self, video_to_play=None, num_frames=90) :
+        if(video_to_play == None) :
+            video_to_play = self.input_stream
+        nprint("Starting Video : {0}".format(video_to_play) )
 
-    def yolo_producer(self, tensor_queue):
+        cap = cv2.VideoCapture(video_to_play)
+        
+        frame_cnt=0
+        while(cap.isOpened() and frame_cnt < num_frames):
+            # Capture frame-by-frame
+            ret, frame = cap.read()
+            #assert(frame.dtype.name == 'uint8')
+        
+            # Display the resulting frame
+            cv2.imshow('frame',frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            frame_cnt += 1
+        
+        # When everything done, release the capture
+        cap.release()
+        cv2.destroyAllWindows()
+
+    def process_video(self, output_filename):
         """
         Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
         
@@ -357,58 +391,42 @@ class yolo_demo(object):
         Returns:
         
         """
-        global yolo_graph
-        with yolo_graph.as_default():
-            cap = cv2.VideoCapture('/data/work/osa/2018-01-yolo/test.mov')
 
-            loop_cnt = 0
-            num_frames_to_show = 20
-            frame = np.ones((16,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
-            while(cap.isOpened() and loop_cnt < num_frames_to_show ):
-                nprint("Qsize = {}".format(tensor_queue.qsize()))
-                # frame is an ndarray of nhwc
-                for j in range(0,self.batch_size) :
-                    ret,  frame[j] = cap.read()
-                    for i in range(0, self.frame_stride) :
-                        ret, dummy_frame = cap.read()
+        # Read in video stream
+        cap = cv2.VideoCapture(self.input_stream)
 
-                nprint("Frame shape = {}".format(frame.shape))
-
-                # preprocess returns a 4D tensor (examples, x, y, RGB)
-
-                image_rotate, image_data = self.preprocess_image_cpu(frame)
-
-                # can plot image data b/c of added dimension ... plot_image(image_data)
-
-                # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
-                abcd = K.learning_phase()
-                out_boxes, out_scores, out_classes = self.sess.run([self.boxes, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
-                tensor_queue.put(item=(image_rotate, out_boxes, out_scores, out_classes))
-
-                # Print predictions info
-                for i in range(0,self.batch_size):
-                    print('Found {} boxes for current batch {}'.format(len(out_boxes[i]),i))
-
-                loop_cnt += 1
-
-            cap.release()
-        nprint("yolo_producer completed")
+        # Define the codec and create VideoWriter object
+        fourcc = cv2.VideoWriter_fourcc(*'mpv4')
+        out = cv2.VideoWriter(output_filename, fourcc, 10.0, (self.get_image_shape("width"),self.get_image_shape("height")), True)
 
 
+        loop_cnt = 0
+        num_batches_to_process = 1000
+        frame = np.ones((16,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
+        while(cap.isOpened() and loop_cnt < num_batches_to_process ):
+            # frame is an ndarray of nhwc
+            for j in range(0,self.batch_size) :
+                ret,  frame[j] = cap.read()
+                for i in range(0, self.frame_stride) :
+                    ret, dummy_frame = cap.read()
 
-    def yolo_consumer(self, tensor_queue):
-        """
-        Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
-        
-        Arguments:
-        
-        Returns:
-        
-        """
-        import cv2
-        while True:
-            nprint("Qsize = {}".format(tensor_queue.qsize()))
-            image_rotate, out_boxes, out_scores, out_classes = tensor_queue.get(block=True)
+
+            # Load an color image in grayscale
+            # frame = cv2.imread(self.input_stream)
+            nprint("loop count {} : Frame shape = {}".format(loop_cnt,frame.shape))
+
+            # preprocess returns a 4D tensor (examples, x, y, RGB)
+
+            image_rotate, image_data = self.preprocess_image_cpu(frame)
+
+            # can plot image data b/c of added dimension ... plot_image(image_data)
+
+            # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
+            out_boxes, out_scores, out_classes = self.sess.run([self.boxes, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
+
+            # Print predictions info
+            for i in range(0,self.batch_size):
+                print('Found {} boxes for current batch {}'.format(len(out_boxes[i]),i))
 
             # Generate colors for drawing bounding boxes.
             colors = generate_colors(self.class_names)
@@ -419,47 +437,23 @@ class yolo_demo(object):
                 image_modified = self.draw_boxes(image_data=image_rotate[m], out_scores=out_scores[m], out_boxes=out_boxes[m], out_classes=out_classes[m], colors=colors)
                 # plot_image(image_modified)
                 # Display the resulting frame
-                cv2.imshow('frame',image_modified.astype('uint8'))
+                im_uint8 = image_modified.astype('uint8')
+                cv2.imshow('frame',im_uint8)
+                nprint("Output image shape {}".format(im_uint8.shape))
+                out.write(im_uint8)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
-            tensor_queue.task_done()
+            loop_cnt += 1
 
+        out.release()
+        cap.release()
         cv2.destroyAllWindows()
 
 
 #################### End Class yolo_demo ################################
 
 
-class threaded_yolo(Thread):
-    '''
-    Class : threaded_yolo
-      1. uses a shared queue to process a video stream via tensor flow yolo algorithm
-      2. loads shared queue 
-      3. video consumer used to display results when available
-    '''
-    def __init__(self, queue, yolo_demo):
-        self.queue = queue
-        self.frame_rate = 1.0 # process every second
-        self.yolo_demo = yolo_demo
-        # Spin up some threads upon initialization
-        self.producer = Thread(target=self.produce_boxes, args=())
-        self.consumer = Thread(target=self.consume_boxes, args=())
-
-        self.producer.setDaemon(True) # threads will stay alive until main exits
-        self.producer.start()
-        self.consumer.setDaemon(True) # threads will stay alive until main exits
-        self.consumer.start()
-
-    def produce_boxes(self):
-        # Processes a video stream and loads tensor into shared queue
-        nprint("starting")
-        self.yolo_demo.yolo_producer(self.queue)
-
-    def consume_boxes(self):
-        # seperate thread to draw boxes and display results
-        nprint("starting")
-        self.yolo_demo.yolo_consumer(self.queue)
 
 #################### End Class threaded_yolo ################################
 
@@ -558,63 +552,40 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-
-
 def main():
     args = _parser()
     dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
-    class_names = read_classes("/data/work/git-repos/yad2k/model_data/coco_classes.txt")
-    anchors = read_anchors("/data/work/git-repos/yad2k/model_data/yolo_anchors.txt")
-    input_stream = "/data/work/osa/2018-01-yolo/test.mov"
+    class_names = read_classes("./model_data/coco_classes.txt")
+    anchors = read_anchors("./model_data/yolo_anchors.txt")
+    #input_stream = "./sampleVideos/ian.mov"
+    input_stream = "./sampleVideos/ElephantStampede.mp4"
 
-    mydemo = yolo_demo(sess, input_stream, class_names, anchors, batch_size=16, frame_stride=20, rotation=270)
+
+    # 270 for mov // 0 for mp4...
+    mydemo = yolo_demo(sess, input_stream, class_names, anchors, batch_size=16, frame_stride=10)
+    # mydemo.play_video()
+    
     mydemo.set_image_shape()
     mydemo.load_and_build_graph()
-    global yolo_graph
-    yolo_graph = tf.get_default_graph()
+    mydemo.print_model_summary()
 
-    # Simultaneously run producer / consumer
-    t = threaded_yolo(queue,mydemo)
-    time.sleep(130)
+    mydemo.process_video("ElephantStampede.mov")
 
-
-
+ 
 
 
 if __name__ == '__main__':
     np.random.seed(1)
     main()
 
-'''
-General Notes about Threading and tensorflow
-
-After I had threaded this tensorflow program, I kept getting this error
-  -> Cannot interpret feed_dict key as Tensor:
-
-The error occured when I would try to inference at the sess.run line.  Basically, sess.run didnt have access to default 
-tensorflow graph that I was using.  
-  
-After researching on google, I came across this post that help me solve this but
-#  https://github.com/jaungiers/Multidimensional-LSTM-BitCoin-Time-Series/issues/1
-
-This post discusses how new threads spawned dont have accesss to the default graph that was created in a different thread.  
-You need to save the graph, and then use a python global variable to access in a different thread.
-
-I used this article as a refresher for global vars in python https://www.geeksforgeeks.org/global-local-variables-python/.
 
 '''
-#
-#
-#
+            # (1080, 1920, 3)
+            # assert(frame.shape == (1080,1920,3))
 
-# Load an color image in grayscale
-#frame = cv2.imread('/data/work/osa/2018-01-yolo/coursera/cnn/week3/AutonDriving/images/test.jpg')
-# frame = cv2.imread(self.input_stream)
-# (1080, 1920, 3)
-# assert(frame.shape == (1080,1920,3))
-
-# Pad my frame with zeros to square it up .. Hardcoded fo
-#frame = np.lib.pad(frame,((0,1200),(0,640),(0,0)), 'constant', constant_values=((0,0),(0,0),(0,0)))
-#frame = np.lib.pad(frame,((420,420),(0,0),(0,0)), 'constant', constant_values=((0,0),(0,0),(0,0)))
-#assert(frame.shape == (1920,1920,3))
+            # Pad my frame with zeros to square it up .. Hardcoded fo
+            #frame = np.lib.pad(frame,((0,1200),(0,640),(0,0)), 'constant', constant_values=((0,0),(0,0),(0,0)))
+            #frame = np.lib.pad(frame,((420,420),(0,0),(0,0)), 'constant', constant_values=((0,0),(0,0),(0,0)))
+            #assert(frame.shape == (1920,1920,3))
+'''
