@@ -19,7 +19,7 @@ import shutil
 import tensorflow as tf
 from keras import backend as K
 from keras.layers import Input, Lambda, Conv2D
-from keras.models import load_model, Model
+from keras.models import load_model, Model, model_from_json
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping
 
 
@@ -29,8 +29,7 @@ import random
 import colorsys
 
 # Globals
-MODEL_PATH = "./model_data/yolo.h5"
-
+GOLDEN_MODEL = "./model_data/yolo.h5"
 
 def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
@@ -60,6 +59,8 @@ class yolo_demo(BaseException):
         self._class_names = _class_names
         self._anchors = _anchors
         self._retrain_file = None
+        self._infer_mode = None
+
         self.rotation = self.get_rotation()
 
     # Setters/Getters
@@ -98,6 +99,15 @@ class yolo_demo(BaseException):
             return self._retrain_file
         else : # set
             self._retrain_file = val
+
+    def infer_mode(self,val=None) :
+        if(val == None) : # get
+            if(self._infer_mode == None) :
+                nprint("Error self._infer_mode not set")
+                return None
+            return self._infer_mode
+        else : # set
+            self._infer_mode = val
 
     def output_dir(self,val=None, overwrite=False) :
 
@@ -155,9 +165,16 @@ class yolo_demo(BaseException):
             rv = None
         return rv
     
-    def load_and_build_graph(self) :
-        nprint("Loading Model")
-        self.yolo_model = load_model(MODEL_PATH)
+    def load_and_build_graph(self, arch, weights) :
+        if(self.infer_mode() == "gold") :
+            nprint("Loading GOLDEN Model")
+            self.yolo_model = load_model(GOLDEN_MODEL)
+        else :
+            nprint("Loading your retrained Model")
+            self.yolo_model = model_from_json(open(arch).read())
+            self.yolo_model.load_weights(weights)
+
+
         nprint("Instantiating graph (yolo_head)")
         self.yolo_outputs = yad2k.yolo_head(self.yolo_model.output, self.anchors(), len(self.class_names()))
         nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
@@ -182,6 +199,11 @@ class yolo_demo(BaseException):
 
         # 1. create and modify original model
         model_full, model_final_wloss = self.create_model()
+        #
+        f = open("retrain_arch.json", "w")
+        model_arch = model_full.to_json()
+        f.write(model_arch)
+        f.close()
 
         #3. add a new layer per your data set requirements
         #4. prepare X/Y
@@ -204,31 +226,35 @@ class yolo_demo(BaseException):
 
 
         logging = TensorBoard()
-        checkpoint = ModelCheckpoint("trained_stage_3_best.h5", monitor='val_loss',
-                                    save_weights_only=True, save_best_only=True)
-        early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=15, verbose=1, mode='auto')
+        #checkpoint = ModelCheckpoint("trained_stage_3_best.h5", monitor='val_loss',
+        #                            save_weights_only=True, save_best_only=True)
+        #early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=15, verbose=1, mode='auto')
+
+        model_final_wloss.save_weights('model_wgts_retrain_stage0.h5')
+
 
         nprint("Fitting Model ")
         model_final_wloss.fit(x=[image_X, labels_Y],
                   y=np.zeros(len(image_X)),
-                  validation_split=0.1,
+                  validation_split=0.0,
                   batch_size=32,
-                  epochs=30,
+                  epochs=70,
                   callbacks=[logging])
-        nprint("Training Complete ")
+        nprint("Stage1 Training Complete ")
 
-        model_final_wloss.save_weights('trained_stage_2.h5')
+        model_final_wloss.save_weights('model_wgts_retrain_stage1.h5')
 
         nprint("Fitting Model Phase 2")
         model_final_wloss.fit(x=[image_X, labels_Y],
                               y=np.zeros(len(image_X)),
-                              validation_split=0.1,
+                              validation_split=0.0,
                               batch_size=32,
-                              epochs=30,
+                              epochs=70,
                               callbacks=[logging])
-        nprint("Training Complete ")
+        nprint("Stage2 Training Complete ")
 
-        model_final_wloss.save_weights('trained_stage_3.h5')
+        #model_final_wloss.save_weights('trained_stage_3.h5')
+        model_final_wloss.save_weights('model_wgts_retrain_stage2.h5')
 
 
 
@@ -326,21 +352,21 @@ class yolo_demo(BaseException):
         '''
 
         # Preloaded yolo uses 19x19 detector
-        detectors_mask_shape = (19, 19, 5, 1) # 1 / 0 .. Pc value
+        #detectors_mask_shape = (19, 19, 5, 1) # 1 / 0 .. Pc value
         matching_boxes_shape = (19, 19, 5, 5) # boxes and class index value : class index needs to be explode into one hot
 
-        matching_boxes_shape = (19, 19, 5, 5) # boxes and class index value : class index needs to be explode into one hot
+        #matching_boxes_shape = (19, 19, 5, 5) # boxes and class index value : class index needs to be explode into one hot
 
         # Create model input layers.
         image_input = Input(shape=(608, 608, 3))
         
-        boxes_input = Input(shape=(None, 5))
-        detectors_mask_input = Input(shape=detectors_mask_shape)
-        matching_boxes_input = Input(shape=matching_boxes_shape)
+        #boxes_input = Input(shape=(None, 5))
+        #detectors_mask_input = Input(shape=detectors_mask_shape)
+        #matching_boxes_input = Input(shape=matching_boxes_shape)
         labels_Y = Input(shape=(19,19,len(self.anchors()),1+4+len(self.class_names())))
 
         # Create model body and remove last layer.
-        yolo_model = load_model(MODEL_PATH)
+        yolo_model = load_model(GOLDEN_MODEL)
         # print(yolo_model.summary())
 
         #____________________________________________________________________________________________________
@@ -360,6 +386,7 @@ class yolo_demo(BaseException):
         final_layer = Conv2D(filters, (1, 1), activation='linear',name='conv2d_final')(topless_yolo.output)
 
         model_final = Model(topless_yolo.input, final_layer)
+
         print(model_final.summary())
 
 
@@ -533,7 +560,7 @@ class yolo_demo(BaseException):
         return rv
 
 
-    def yolo_eval(self,  max_boxes=10, score_threshold=.6, iou_threshold=.5):
+    def yolo_eval(self,  max_boxes=10, score_threshold=.3, iou_threshold=.5):
         """
         Converts the output of YOLO encoding (a lot of boxes) to your predicted boxes along with their scores, box coordinates and classes.
         
@@ -570,12 +597,14 @@ class yolo_demo(BaseException):
         all_classes = []
 
         for m in range(0,self.batch_size) :
-            tmp_box_class_probs = tf.slice(box_class_probs, [m,0,0,0,0], [1,19,19,5,80], name=None)
-            tmp_boxes_xy = tf.slice(box_corners_xy, [m,0,0,0,0], [1,19,19,5,4], name=None)
-            tmp_confidence = tf.slice(box_confidence, [m,0,0,0,0], [1,19,19,5,1], name=None)
+            num_classes = len(self.class_names())
+            num_anchors = len(self.anchors())
+            tmp_box_class_probs = tf.slice(box_class_probs, [m,0,0,0,0], [1,19,19,num_anchors,num_classes], name=None)
+            tmp_boxes_xy = tf.slice(box_corners_xy, [m,0,0,0,0], [1,19,19,num_anchors,4], name=None)
+            tmp_confidence = tf.slice(box_confidence, [m,0,0,0,0], [1,19,19,num_anchors,1], name=None)
 
 
-            tmp_scores, tmp_boxes_xy, tmp_classes = self.yolo_filter_boxes(box_class_probs=tmp_box_class_probs,box_confidence=tmp_confidence,boxes_xy=tmp_boxes_xy,threshold=iou_threshold)
+            tmp_scores, tmp_boxes_xy, tmp_classes = self.yolo_filter_boxes(box_class_probs=tmp_box_class_probs,box_confidence=tmp_confidence,boxes_xy=tmp_boxes_xy,threshold=score_threshold)
 
             # Scale boxes back to original image shape.
             tmp_scaled_boxes_xy = scale_boxes(tmp_boxes_xy, self.image_shape)
@@ -1132,20 +1161,23 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-def infer(audit_mode=False, output_dir="./output"):
+def infer(input_stream, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
+          arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
+    '''
+     mode = ["gold" , "retrained"]
+       gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
+       retrained used a supplied architecture and weights
+    '''
+
     args = _parser()
     dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
 
-    #input_stream = "./sampleVideos/ian.mov"
-    #input_stream = "./sampleVideos/ElephantStampede.mp4"
-    input_stream = "/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4"
-
     # 270 for mov // 0 for mp4...
     mydemo = yolo_demo(sess, 
         _input_stream=input_stream, 
-        _class_names=read_classes("./model_data/coco_classes.txt"), 
-        _anchors=read_anchors("./model_data/yolo_anchors.txt"), 
+        _class_names=read_classes(class_file),
+        _anchors=read_anchors(anchor_file),
         batch_size=16, 
         frame_stride=10)
     
@@ -1153,10 +1185,9 @@ def infer(audit_mode=False, output_dir="./output"):
     # mydemo.play_video()
     mydemo.output_dir(output_dir, overwrite=True)
     mydemo.audit_mode(audit_mode)
-
-
     mydemo.set_image_shape()
-    mydemo.load_and_build_graph()
+    mydemo.infer_mode(mode)
+    mydemo.load_and_build_graph(arch,weights)
     mydemo.print_model_summary()
 
     mydemo.process_video("clear.mov")
@@ -1179,17 +1210,44 @@ def retrain():
     mydemo.retrain_file("./retrain/labels.json")
     mydemo.retrain()
 
+def test():
+    args = _parser()
+    dev_cnt = 0 if args.device == 'cpu' else 1
+    sess = K.get_session()
+    mydemo = yolo_demo(sess)
+    mydemo.class_names(read_classes("./retrain/clear_classes.txt"))
+    mydemo.anchors(read_anchors("./retrain/yolo_anchors.txt"))
+    mydemo.retrain_file("./retrain/labels.json")
+    mydemo.create_model()
+
 # Either retrain, or infer ...
 if __name__ == '__main__':
     np.random.seed(1)
-    #infer(audit_mode=True, output_dir="./output")
-    retrain()
+    #test() #this just builds a braindead mdl ...
+    #infer(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4", audit_mode=True, output_dir="./output", mode="gold") # models/yolo.h5
 
+
+
+    retrain()
+    #infer(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
+    #      audit_mode=False,
+    #      output_dir="./retrain_output",
+    #      mode="retrained",
+    #      arch="retrain_arch.json",
+    #      weights="./model_wgts_retrain_stage2.h5",
+    #      class_file="./retrain/clear_classes.txt",
+    #      anchor_file="./retrain/yolo_anchors.txt")
+#
 
 
 
     
 '''
+
+   #input_stream = "./sampleVideos/ian.mov"
+    #input_stream = "./sampleVideos/ElephantStampede.mp4"
+    #input_stream = "/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4"
+
             # (1080, 1920, 3)
             # assert(frame.shape == (1080,1920,3))
 
