@@ -240,7 +240,7 @@ class yolo_demo(BaseException):
                   batch_size=32,
                   epochs=70,
                   callbacks=[logging])
-        nprint("Stage1 Training Complete ")
+        nprint("Stage1 Training Complete Writing model_wgts_retrain_stage1.h5")
 
         model_final_wloss.save_weights('model_wgts_retrain_stage1.h5')
 
@@ -251,7 +251,7 @@ class yolo_demo(BaseException):
                               batch_size=32,
                               epochs=70,
                               callbacks=[logging])
-        nprint("Stage2 Training Complete ")
+        nprint("Stage2 Training Complete .  Writing model_wgts_retrain_stage2.h5")
 
         #model_final_wloss.save_weights('trained_stage_3.h5')
         model_final_wloss.save_weights('model_wgts_retrain_stage2.h5')
@@ -758,7 +758,7 @@ class yolo_demo(BaseException):
         return rv_rotated_image,rv_scaled_image
 
 
-    def draw_boxes(self, image_data, out_scores, out_boxes_xy, out_classes, colors):
+    def draw_boxes(self, image_data_orig, out_scores, out_boxes_xy, out_classes, colors):
         '''
         
         :param image_data: h,w,c tensor
@@ -768,6 +768,10 @@ class yolo_demo(BaseException):
         :param colors: 
         :return:  image_data: h,w,c tensor
         '''
+
+        # Don't Side effect the input image
+        image_data = np.copy(image_data_orig)
+
         # assert(image_data.shape == (1920,1920,3))
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names()[c]
@@ -791,7 +795,7 @@ class yolo_demo(BaseException):
             cv2.putText(image_data,predicted_class,(left,top), font, 1,colors[c],2,cv2.LINE_AA)
             image_data = cv2.rectangle(image_data,(left,top),(right,bottom),colors[c],3)
 
-        # draw a 100 x 100 grid for obj labelling ...
+            # draw a 100 x 100 grid for obj labelling ...
             image_data = self.draw_grid(image_data, 100)
 
         return image_data
@@ -856,6 +860,24 @@ class yolo_demo(BaseException):
             f.write(str + ",\n")
         f.close()
 
+    def process_frame(self,frame):
+        """
+        Pass a single NHWC frame to score result.  Useful for inferencing a single image
+
+        Arguments:
+
+        Returns:
+
+        """
+        # preprocess returns a 4D tensor (examples, x, y, RGB)
+        image_rotate, image_data = self.preprocess_image_cpu(frame)
+
+        # can plot image data b/c of added dimension ... plot_image(image_data)
+
+        # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
+        out_boxes_xy, out_scores, out_classes = self.sess.run([self.boxes_xy, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
+
+        return out_boxes_xy, out_scores, out_classes, image_rotate
 
     def process_video(self, output_filename="tmp.mov"):
         """
@@ -874,6 +896,9 @@ class yolo_demo(BaseException):
 
         # Read in video stream
         cap = cv2.VideoCapture(self.input_stream())
+        max_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        nprint("Total # frames in input movie = {0}".format(max_frames))
+        nprint("Each loop will consume {0} frames ".format(str(self.batch_size *  self.frame_stride)))
 
         # Define the codec and create VideoWriter object
         fourcc = cv2.VideoWriter_fourcc(*'mpv4')
@@ -882,8 +907,11 @@ class yolo_demo(BaseException):
 
 
         loop_cnt = 0
-        num_batches_to_process = 1
-        frame = np.ones((16,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
+        num_batches_to_process = int(max_frames / (self.batch_size *  self.frame_stride))
+        frame = np.ones((self.batch_size,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
+
+
+        # TODO : use max_frames to limit frame loop
         while(cap.isOpened() and loop_cnt < num_batches_to_process ):
             # frame is an ndarray of nhwc
             for j in range(0,self.batch_size) :
@@ -896,14 +924,7 @@ class yolo_demo(BaseException):
             # frame = cv2.imread(self.input_stream)
             nprint("loop count {} : Frame shape = {}".format(loop_cnt,frame.shape))
 
-            # preprocess returns a 4D tensor (examples, x, y, RGB)
-
-            image_rotate, image_data = self.preprocess_image_cpu(frame)
-
-            # can plot image data b/c of added dimension ... plot_image(image_data)
-
-            # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
-            out_boxes_xy, out_scores, out_classes = self.sess.run([self.boxes_xy, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
+            out_boxes_xy, out_scores, out_classes, image_rotate = self.process_frame(frame)
 
             # Print predictions info
             for i in range(0,self.batch_size):
@@ -916,7 +937,7 @@ class yolo_demo(BaseException):
             for m in range(0,self.batch_size):
                 # Draw bounding boxes on the image file
                 #plot_image(image_rotate[m].astype('uint8'))
-                image_modified = self.draw_boxes(image_data=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors)
+                image_modified = self.draw_boxes(image_data_orig=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors)
                 #plot_image(image_modified.astype('uint8'))
 
                 # plot_image(image_modified)
@@ -933,14 +954,15 @@ class yolo_demo(BaseException):
 
             if(self.audit_mode() == True ) :
                 nprint("Entering Audit Mode")
+                nprint("Storing Pictures in {}".format(self.output_dir()))
                 for m in range(0,self.batch_size):
 
-                    image_modified = self.draw_boxes(image_data=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors)
+                    image_modified = self.draw_boxes(image_data_orig=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors)
                     # plot_image(image_modified)
                     # Display the resulting frame
                     im_uint8 = image_modified.astype('uint8')
-                    fn_audit = self.output_dir()+"/"+"audit-"+ str(m) + ".jpg"
-                    fn_orig  = self.output_dir()+"/"+"orig-"+ str(m) + ".jpg"
+                    fn_audit = self.output_dir()+"/"+"audit-"+ str(loop_cnt*self.batch_size+m) + ".jpg"
+                    fn_orig  = self.output_dir()+"/"+"orig-"+ str(loop_cnt*self.batch_size+m) + ".jpg"
 
                     cv2.imwrite( fn_orig,  image_rotate[m] );
                     cv2.imwrite( fn_audit, im_uint8 );
@@ -952,6 +974,8 @@ class yolo_demo(BaseException):
         out.release()
         cap.release()
         cv2.destroyAllWindows()
+
+
 
 
 
@@ -1128,7 +1152,7 @@ def select_anchorbox_index(box_xywhc,anchor_list,conv_width,conv_height) :
              best_iou = iou
              best_anchor = k
 
-    return k
+    return best_anchor
 
 # Encoding box with numpy
 def encode_box(box_xywh, conv_width, conv_height, best_anchor) :
@@ -1161,7 +1185,7 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-def infer(input_stream, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
+def infer_video(input_stream, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
           arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
     '''
      mode = ["gold" , "retrained"]
@@ -1178,8 +1202,8 @@ def infer(input_stream, audit_mode=False,  output_dir="./output", mode="gold", w
         _input_stream=input_stream, 
         _class_names=read_classes(class_file),
         _anchors=read_anchors(anchor_file),
-        batch_size=16, 
-        frame_stride=10)
+        batch_size=8,
+        frame_stride=30)
     
 
     # mydemo.play_video()
@@ -1192,7 +1216,36 @@ def infer(input_stream, audit_mode=False,  output_dir="./output", mode="gold", w
 
     mydemo.process_video("clear.mov")
 
-    #mydemo.train()
+def infer_image(input_image, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
+                arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
+    '''
+     mode = ["gold" , "retrained"]
+       gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
+       retrained used a supplied architecture and weights
+    '''
+
+    args = _parser()
+    dev_cnt = 0 if args.device == 'cpu' else 1
+    sess = K.get_session()
+
+    # 270 for mov // 0 for mp4...
+    mydemo = yolo_demo(sess,
+                       _input_stream=None,
+                       _class_names=read_classes(class_file),
+                       _anchors=read_anchors(anchor_file),
+                       batch_size=8,
+                       frame_stride=30)
+
+
+    # mydemo.play_video()
+    mydemo.output_dir(output_dir, overwrite=True)
+    mydemo.audit_mode(audit_mode)
+    mydemo.set_image_shape()
+    mydemo.infer_mode(mode)
+    mydemo.load_and_build_graph(arch,weights)
+    mydemo.print_model_summary()
+
+    mydemo.process_image(input_image)
 
 def retrain():
     args = _parser()
@@ -1210,7 +1263,7 @@ def retrain():
     mydemo.retrain_file("./retrain/labels.json")
     mydemo.retrain()
 
-def test():
+def test_image():
     args = _parser()
     dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
@@ -1224,12 +1277,12 @@ def test():
 if __name__ == '__main__':
     np.random.seed(1)
     #test() #this just builds a braindead mdl ...
-    #infer(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4", audit_mode=True, output_dir="./output", mode="gold") # models/yolo.h5
 
+    #infer_video(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4", audit_mode=True, output_dir="./output", mode="gold") # models/yolo.h5
 
+    #retrain()
 
-    retrain()
-    #infer(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
+    #infer_video(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
     #      audit_mode=False,
     #      output_dir="./retrain_output",
     #      mode="retrained",
@@ -1237,7 +1290,16 @@ if __name__ == '__main__':
     #      weights="./model_wgts_retrain_stage2.h5",
     #      class_file="./retrain/clear_classes.txt",
     #      anchor_file="./retrain/yolo_anchors.txt")
-#
+
+
+
+    infer_image(input_image="/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg",
+                audit_mode=True,
+                mode="retrained",
+                arch="retrain_arch.json",
+                weights="./model_wgts_retrain_stage2.h5",
+                class_file="./retrain/clear_classes.txt",
+                anchor_file="./retrain/yolo_anchors.txt")
 
 
 
