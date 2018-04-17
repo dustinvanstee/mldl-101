@@ -25,7 +25,6 @@ from tensorflow.python import debug as tf_debug
 
 
 from yolo_utils import read_classes, read_anchors
-import yad2k.models.keras_yolo as yad2k
 import random
 import colorsys
 
