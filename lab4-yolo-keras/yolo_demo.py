@@ -21,6 +21,7 @@ from keras import backend as K
 from keras.layers import Input, Lambda, Conv2D
 from keras.models import load_model, Model, model_from_json
 from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping
+from tensorflow.python import debug as tf_debug
 
 
 from yolo_utils import read_classes, read_anchors
@@ -38,7 +39,7 @@ def nprint(mystring) :
 class yolo_demo(BaseException):
     """The fully-connected neural network model."""
 
-    def __init__(self, sess, _input_stream=None, _class_names=None, _anchors=None,
+    def __init__(self, sess, _input_vi=None, _class_names=None, _anchors=None,
             image_shape=(720.,1280.), 
             batch_size=64,
             frame_stride=1):
@@ -49,30 +50,43 @@ class yolo_demo(BaseException):
         self.image_shape = image_shape # in future, auto set this ...
         self.yolo_model_image_shape = (608.0,608.0)
         self.yolo_model = None
-        self.yolo_outputs = None
         self.scores = None
         self.boxes_xy = None
         self.classes = None
         self._output_dir = None
         self._audit_mode = False
-        self._input_stream = _input_stream
+        self._input_vi = _input_vi
         self._class_names = _class_names
         self._anchors = _anchors
         self._retrain_file = None
-        self._infer_mode = None
+        self._infer_mode = None  # gold, retrain
+        self._vi_mode = None  # image, video
 
         self.rotation = self.get_rotation()
 
     # Setters/Getters
-    def input_stream(self,val=None) :
-        if(val == None) : # get
-            if(self._input_stream == None) :
-                nprint("Error self._input_stream not set")
-                return None
-            return self._input_stream
-        else : # set
-            self._input_stream = val
 
+    #Input Video or Image.  Mode for the yolo demo is controlled by vi_mode.
+    # If using video, vi_mode = video and vice versa
+    def input_vi(self,val=None) :
+        if(val == None) : # get
+            if(self._input_vi == None) :
+                nprint("Error self._input_vi not set")
+                return None
+            return self._input_vi
+        else : # set
+            self._input_vi = val
+
+    def vi_mode(self,input=None) :
+        if(input == None) :
+            if(self._vi_mode == None) :
+                nprint("Error self._vi_mode not set")
+                return None
+            return self._vi_mode
+        else :
+            self._vi_mode = input
+
+    # List of classes for the object detection algorithm
     def class_names(self,val=None) :
         if(val == None) : # get
             if(self._class_names == None) :
@@ -127,9 +141,6 @@ class yolo_demo(BaseException):
                 os.makedirs(val)
             self._output_dir = val
 
-
-
-
     def audit_mode(self,input=None) :
         if(input == None) :
             if(self._audit_mode == None) :
@@ -138,6 +149,7 @@ class yolo_demo(BaseException):
             return self._audit_mode
         else :
             self._audit_mode = input
+
 
     # end Setters / Getters
 
@@ -151,10 +163,10 @@ class yolo_demo(BaseException):
     # Image Manipulations
     def get_rotation(self):
         rv=0
-        if(self.input_stream() != None) :
-            if( re.search("\.mov", self.input_stream())) :
+        if(self.input_vi() != None) :
+            if( re.search("\.mov", self.input_vi())) :
                 rv = 270
-            elif( re.search("\.mp4", self.input_stream())) :
+            elif( re.search("\.mp4", self.input_vi())) :
                 rv = 0
             else :
                 nprint("warning, unhandled file extenstion.  Currently support *.mov/*.mp4")
@@ -174,11 +186,12 @@ class yolo_demo(BaseException):
             self.yolo_model = model_from_json(open(arch).read())
             self.yolo_model.load_weights(weights)
 
+        with tf.name_scope("post_processing") as scope:
 
-        nprint("Instantiating graph (yolo_head)")
-        self.yolo_outputs = yad2k.yolo_head(self.yolo_model.output, self.anchors(), len(self.class_names()))
-        nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
-        self.scores, self.boxes_xy, self.classes = self.yolo_eval() # sets self.scores, self.boxes, self.classes structures
+            nprint("Instantiating graph (yolo_head)")
+            yolo_outputs = yad2k.yolo_head(self.yolo_model.output, self.anchors(), len(self.class_names()))
+            nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
+            self.scores, self.boxes_xy, self.classes = self.yolo_eval(yolo_outputs) # sets self.scores, self.boxes, self.classes structures
 
     def print_model_summary(self):
         print(self.yolo_model.summary())
@@ -238,9 +251,14 @@ class yolo_demo(BaseException):
                   y=np.zeros(len(image_X)),
                   validation_split=0.0,
                   batch_size=32,
-                  epochs=70,
+                  epochs=1,
                   callbacks=[logging])
         nprint("Stage1 Training Complete Writing model_wgts_retrain_stage1.h5")
+
+        ## Lets GO!!
+        test = model_final_wloss.predict(x=[image_X, labels_Y], batch_size=None, verbose=0, steps=None)
+        a=1
+
 
         model_final_wloss.save_weights('model_wgts_retrain_stage1.h5')
 
@@ -511,7 +529,7 @@ class yolo_demo(BaseException):
         for i in data :
 
             # Record initial image size
-            image_np = cv2.imread(i["image_id"])
+            image_np = cv2.imread(i["image_id"]) # TODO : add file exists check!
             (r,c,rgb) = image_np.shape
 
             box_list = i["bbox_xymin_xymax"] + [i["category_id"]]
@@ -537,12 +555,22 @@ class yolo_demo(BaseException):
 
     def set_image_shape(self):
         # open input stream just once and cache ....
-        cap = cv2.VideoCapture(self.input_stream())
-        ret, frame = cap.read()
+        frame = []
+        if(self.vi_mode() == "video") :
+            cap = cv2.VideoCapture(self.input_vi())
+            ret, frame = cap.read()
+            cap.release()
+            cv2.destroyAllWindows()
+        elif(self.vi_mode() == "image") :
+            frame = cv2.imread(self.input_vi())
+        else :
+            nprint("Error : need to set vi_mode to video or image")
+            exit(1)
+
         nprint("Setting self.image_shape to {0}".format(frame.shape))
+        assert len(frame.shape) == 3
         self.image_shape = frame.shape
-        cap.release()
-        cv2.destroyAllWindows()
+
 
     def get_image_shape(self, dim="height"):
         rv = None
@@ -560,7 +588,7 @@ class yolo_demo(BaseException):
         return rv
 
 
-    def yolo_eval(self,  max_boxes=10, score_threshold=.3, iou_threshold=.5):
+    def yolo_eval(self, yolo_outputs, max_boxes=10, score_threshold=.3, iou_threshold=.5):
         """
         Converts the output of YOLO encoding (a lot of boxes) to your predicted boxes along with their scores, box coordinates and classes.
         
@@ -583,7 +611,7 @@ class yolo_demo(BaseException):
 
         # Retrieve outputs of the YOLO model
         # This output contains the boxes for the entire batch
-        box_xy, box_wh, box_confidence, box_class_probs = self.yolo_outputs
+        box_xy, box_wh, box_confidence, box_class_probs = yolo_outputs
 
         # Convert boxes to be ready for filtering functions
         box_corners_xy = yolo_boxes_to_corners(box_xy, box_wh)
@@ -595,6 +623,8 @@ class yolo_demo(BaseException):
         all_boxes_xy = []
         all_scores = []
         all_classes = []
+
+        #all_boxes_xy = tf.get_variable("v", shape=(self.batch_size,None,4), initializer=tf.zeros_initializer())
 
         for m in range(0,self.batch_size) :
             num_classes = len(self.class_names())
@@ -615,6 +645,10 @@ class yolo_demo(BaseException):
             all_scores.append(ts)
             all_boxes_xy.append(tb)
             all_classes.append(tc)
+
+        all_boxes_xy = K.stack(all_boxes_xy, axis=0)
+        all_scores = K.stack(all_scores, axis=0)
+        all_classes = K.stack(all_classes, axis=0)
 
         return all_scores, all_boxes_xy, all_classes
 
@@ -773,6 +807,7 @@ class yolo_demo(BaseException):
         image_data = np.copy(image_data_orig)
 
         # assert(image_data.shape == (1920,1920,3))
+
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names()[c]
             box_xy = out_boxes_xy[i]
@@ -818,7 +853,7 @@ class yolo_demo(BaseException):
 
     def play_video(self, video_to_play=None, num_frames=90) :
         if(video_to_play == None) :
-            video_to_play = self.input_stream()
+            video_to_play = self.input_vi()
         nprint("Starting Video : {0}".format(video_to_play) )
 
         cap = cv2.VideoCapture(video_to_play)
@@ -877,16 +912,49 @@ class yolo_demo(BaseException):
         # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
         out_boxes_xy, out_scores, out_classes = self.sess.run([self.boxes_xy, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
 
+        # TODO : convert tensors to Lists?
+
         return out_boxes_xy, out_scores, out_classes, image_rotate
+
+    def process_image(self) :
+        """
+        Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
+        Arguments:
+        Returns:
+
+        """
+        image_np = cv2.imread(self.input_vi())
+        frame = np.ones((self.batch_size,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
+        frame[0] = image_np
+        out_boxes_xy, out_scores, out_classes, image_rotate = self.process_frame(frame)
+        # Print predictions info
+        for i in range(0,self.batch_size):
+            print('Found {} boxes for current batch {}'.format(len(out_boxes_xy[i]),i))
+
+        # Generate colors for drawing bounding boxes.
+        colors = generate_colors(self.class_names())
+
+        # Create a Image  ....
+
+        image_modified = self.draw_boxes(image_data_orig=image_rotate[0], out_scores=out_scores[0], out_boxes_xy=out_boxes_xy[0], out_classes=out_classes[0], colors=colors)
+
+        # plot_image(image_modified)
+        # Display the resulting frame
+        im_uint8 = image_modified.astype('uint8')
+        plot_image(im_uint8)
+
+        nprint("Output image shape {}".format(im_uint8.shape))
+        cv2.imwrite("golden.jpg",im_uint8)
+
 
     def process_video(self, output_filename="tmp.mov"):
         """
         Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
-        
+
         Arguments:
-        
+
         Returns:
-        
+
         """
 
         output_filename = self.append_output_path(output_filename)
@@ -895,7 +963,7 @@ class yolo_demo(BaseException):
         nprint("Saving new movie here {}".format(output_filename))
 
         # Read in video stream
-        cap = cv2.VideoCapture(self.input_stream())
+        cap = cv2.VideoCapture(self.input_vi())
         max_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         nprint("Total # frames in input movie = {0}".format(max_frames))
         nprint("Each loop will consume {0} frames ".format(str(self.batch_size *  self.frame_stride)))
@@ -921,7 +989,7 @@ class yolo_demo(BaseException):
 
 
             # Load an color image in grayscale
-            # frame = cv2.imread(self.input_stream)
+            # frame = cv2.imread(self.input_vi)
             nprint("loop count {} : Frame shape = {}".format(loop_cnt,frame.shape))
 
             out_boxes_xy, out_scores, out_classes, image_rotate = self.process_frame(frame)
@@ -1175,6 +1243,16 @@ def decode_box() :
 
 
 def plot_image(img) :
+    '''
+    can pass a string that points to the file, or a numpy array.  
+    If its a string, first open the file, if array, just plot it
+    :param img: 
+    :return: None
+    '''
+    if (isinstance(img,str)) :
+        img = cv2.imread(img)
+
+
     assert(img.dtype.name == 'uint8')
 
     cv2.imshow('image',img)
@@ -1185,7 +1263,7 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-def infer_video(input_stream, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
+def infer_video(input_video, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
           arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
     '''
      mode = ["gold" , "retrained"]
@@ -1199,7 +1277,7 @@ def infer_video(input_stream, audit_mode=False,  output_dir="./output", mode="go
 
     # 270 for mov // 0 for mp4...
     mydemo = yolo_demo(sess, 
-        _input_stream=input_stream, 
+        _input_vi=input_video,
         _class_names=read_classes(class_file),
         _anchors=read_anchors(anchor_file),
         batch_size=8,
@@ -1207,6 +1285,7 @@ def infer_video(input_stream, audit_mode=False,  output_dir="./output", mode="go
     
 
     # mydemo.play_video()
+    mydemo.vi_mode("video")
     mydemo.output_dir(output_dir, overwrite=True)
     mydemo.audit_mode(audit_mode)
     mydemo.set_image_shape()
@@ -1214,10 +1293,11 @@ def infer_video(input_stream, audit_mode=False,  output_dir="./output", mode="go
     mydemo.load_and_build_graph(arch,weights)
     mydemo.print_model_summary()
 
-    mydemo.process_video("clear.mov")
+    # post processed file saved to name below
+    mydemo.process_video(output_filename="clear.mov")
 
 def infer_image(input_image, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
-                arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
+                arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", tfdbg=False):
     '''
      mode = ["gold" , "retrained"]
        gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
@@ -1228,26 +1308,38 @@ def infer_image(input_image, audit_mode=False,  output_dir="./output", mode="gol
     dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
 
+    if(tfdbg == True) :
+        sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+        K.set_session(sess)
+
     # 270 for mov // 0 for mp4...
     mydemo = yolo_demo(sess,
-                       _input_stream=None,
+                       _input_vi=input_image,
                        _class_names=read_classes(class_file),
                        _anchors=read_anchors(anchor_file),
-                       batch_size=8,
-                       frame_stride=30)
+                       batch_size=1,
+                       frame_stride=1)
 
 
+    # plot_image(input_image)
     # mydemo.play_video()
     mydemo.output_dir(output_dir, overwrite=True)
     mydemo.audit_mode(audit_mode)
+    mydemo.vi_mode("image")
     mydemo.set_image_shape()
     mydemo.infer_mode(mode)
     mydemo.load_and_build_graph(arch,weights)
     mydemo.print_model_summary()
 
-    mydemo.process_image(input_image)
+    file_writer = tf.summary.FileWriter('./tensorboard', sess.graph)
+    mydemo.process_image()
+
 
 def retrain():
+    '''
+    Retrains model based on image set defined in preconfigured json file.  No video / image passed here
+    :return: writes out new models in current working directory.  This can be cleaned up when working better
+    '''
     args = _parser()
     dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
@@ -1261,28 +1353,22 @@ def retrain():
     mydemo.class_names(read_classes("./retrain/clear_classes.txt"))
     mydemo.anchors(read_anchors("./retrain/yolo_anchors.txt"))
     mydemo.retrain_file("./retrain/labels.json")
+    mydemo.vi_mode("video")
     mydemo.retrain()
-
-def test_image():
-    args = _parser()
-    dev_cnt = 0 if args.device == 'cpu' else 1
-    sess = K.get_session()
-    mydemo = yolo_demo(sess)
-    mydemo.class_names(read_classes("./retrain/clear_classes.txt"))
-    mydemo.anchors(read_anchors("./retrain/yolo_anchors.txt"))
-    mydemo.retrain_file("./retrain/labels.json")
-    mydemo.create_model()
 
 # Either retrain, or infer ...
 if __name__ == '__main__':
     np.random.seed(1)
-    #test() #this just builds a braindead mdl ...
 
-    #infer_video(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4", audit_mode=True, output_dir="./output", mode="gold") # models/yolo.h5
+    # Run Inference on a Video using a golden model
+    #infer_video(input_video="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
+    #            audit_mode=True,
+    #            output_dir="./output",
+    #            mode="gold") # models/yolo.h5
 
     #retrain()
 
-    #infer_video(input_stream="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
+    #infer_video(input_vi="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
     #      audit_mode=False,
     #      output_dir="./retrain_output",
     #      mode="retrained",
@@ -1293,15 +1379,21 @@ if __name__ == '__main__':
 
 
 
+    ## Infer Image using retrained model
+    #infer_image(input_image="/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg",
+    #            audit_mode=True,
+    #            mode="retrained",
+    #            arch="retrain_arch.json",
+    #            weights="./model_wgts_retrain_stage2.h5",
+    #            class_file="./retrain/clear_classes.txt",
+    #            anchor_file="./retrain/yolo_anchors.txt")
+
+    # Infer Image using golden model
     infer_image(input_image="/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg",
                 audit_mode=True,
-                mode="retrained",
-                arch="retrain_arch.json",
-                weights="./model_wgts_retrain_stage2.h5",
-                class_file="./retrain/clear_classes.txt",
-                anchor_file="./retrain/yolo_anchors.txt")
-
-
+                tfdbg=False,
+                mode="gold")
+#
 
     
 '''
@@ -1329,6 +1421,17 @@ if __name__ == '__main__':
             #draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)], fill=colors[c])
             #draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             
-            
+           
+def test_image():
+    args = _parser()
+    dev_cnt = 0 if args.device == 'cpu' else 1
+    sess = K.get_session()
+    ses
+    mydemo = yolo_demo(sess)
+    mydemo.class_names(read_classes("./retrain/clear_classes.txt"))
+    mydemo.anchors(read_anchors("./retrain/yolo_anchors.txt"))
+    mydemo.retrain_file("./retrain/labels.json")
+    mydemo.create_model()
+
             
 '''
