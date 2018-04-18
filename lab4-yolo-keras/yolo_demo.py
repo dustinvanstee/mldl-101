@@ -25,7 +25,7 @@ from tensorflow.python import debug as tf_debug
 
 
 from yolo_utils import read_classes, read_anchors
-import random 
+import random
 import colorsys
 
 # Globals
