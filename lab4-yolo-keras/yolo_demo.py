@@ -51,6 +51,7 @@ class yolo_demo(BaseException):
         self.yolo_model = None
         self.scores = None
         self.boxes_xy = None
+        self.grid_max_pc = None # for shading image
         self.classes = None
         self._output_dir = None
         self._audit_mode = False
@@ -60,8 +61,6 @@ class yolo_demo(BaseException):
         self._retrain_file = None
         self._infer_mode = None  # gold, retrain
         self._vi_mode = None  # image, video
-
-        self.rotation = self.get_rotation()
 
     # Setters/Getters
 
@@ -167,6 +166,10 @@ class yolo_demo(BaseException):
                 rv = 270
             elif( re.search("\.mp4", self.input_vi())) :
                 rv = 0
+            elif( re.search("\.jpg", self.input_vi())) :
+                rv = 0
+            elif( re.search("\.png", self.input_vi())) :
+                rv = 0
             else :
                 nprint("warning, unhandled file extenstion.  Currently support *.mov/*.mp4")
                 rv = 0
@@ -176,7 +179,7 @@ class yolo_demo(BaseException):
             rv = None
         return rv
     
-    def load_and_build_graph(self, arch, weights) :
+    def load_and_build_graph(self, arch, weights, max_boxes=10, score_threshold=.5, iou_threshold=.5) :
         if(self.infer_mode() == "gold") :
             nprint("Loading GOLDEN Model")
             self.yolo_model = load_model(GOLDEN_MODEL)
@@ -190,18 +193,13 @@ class yolo_demo(BaseException):
             nprint("Instantiating graph (yolo_head)")
             yolo_outputs = self.yolo_head(self.yolo_model.output, self.anchors(), len(self.class_names()))
             nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
-            self.scores, self.boxes_xy, self.classes = self.yolo_eval(yolo_outputs) # sets self.scores, self.boxes, self.classes structures
+            nprint("Max Boxes = {}, Object Probability Threshold = {}, IOU threshold = {}".format(max_boxes,score_threshold,iou_threshold))
+
+        self.scores, self.boxes_xy, self.classes, self.grid_max_pc = self.yolo_eval(yolo_outputs, max_boxes,score_threshold,iou_threshold) # sets self.scores, self.boxes, self.classes structures
 
     def print_model_summary(self):
         print(self.yolo_model.summary())
 
-
-
-    def shade_image_19_19(self) :
-        '''
-        stub for image mod ....
-        '''
-        a=1
 
     def retrain(self):
         '''
@@ -658,7 +656,7 @@ class yolo_demo(BaseException):
 
         return box_xy, box_wh, box_confidence, box_class_probs
 
-    def yolo_eval(self, yolo_outputs, max_boxes=10, score_threshold=.3, iou_threshold=.5):
+    def yolo_eval(self, yolo_outputs, max_boxes=10, score_threshold=.5, iou_threshold=.5):
         """
         Converts the output of YOLO encoding (a lot of boxes) to your predicted boxes along with their scores, box coordinates and classes.
         
@@ -677,6 +675,7 @@ class yolo_demo(BaseException):
         scores -- tensor of shape (None, ), predicted score for each box
         boxes -- tensor of shape (None, 4), predicted box coordinates
         classes -- tensor of shape (None,), predicted class for each box
+        grid_max_pc - tensor of shape(None, 19, 19, 2), probability of an object(objectness)[None, 19, 19,0], and predicted class for each grid location[None, 19, 19,1]
         """
 
         # Retrieve outputs of the YOLO model
@@ -693,6 +692,7 @@ class yolo_demo(BaseException):
         all_boxes_xy = []
         all_scores = []
         all_classes = []
+        all_grid_max_pc = None
 
         #all_boxes_xy = tf.get_variable("v", shape=(self.batch_size,None,4), initializer=tf.zeros_initializer())
 
@@ -712,15 +712,33 @@ class yolo_demo(BaseException):
             # Use one of the functions you've implemented to perform Non-max suppression with a threshold of iou_threshold (≈1 line)
             ts,tb,tc = self.yolo_non_max_suppression(tmp_scores, tmp_scaled_boxes_xy, tmp_classes, max_boxes, iou_threshold)
 
+
+
+            # to return maximum probability at each grid location, need to loop thru anchor boxes too ...
+            # Get the most likely class here
+            tmp_grid_max_pc1 = K.argmax(tmp_box_class_probs,4) # select max class index amongst K classes .  still have multiple anchor boxes..
+            tmp_grid_max_pc1 = K.max(tmp_grid_max_pc1,3,keepdims=True) # select maximum across anchor boxes
+            tmp_grid_max_pc1 = K.cast(tmp_grid_max_pc1, "float32")
+            # Glue Pc to most likely class (should be a mx19x19x2) tensor after completion
+            tmp_grid_max_pc0 = K.max(tmp_confidence,3) # select maximum across anchor boxes 1x19x19x5x1 -> 1x19x19x1
+            #tmp_grid_max_pc0 = K.max(tmp_grid_max_pc0,3) # select maximum across anchor boxes 1x19x19x1 -> 1x19x19
+            tmp_grid_max_pc = K.concatenate([tmp_grid_max_pc0,tmp_grid_max_pc1],3)
+
             all_scores.append(ts)
             all_boxes_xy.append(tb)
             all_classes.append(tc)
+
+            # If multiple images concatenate together .. probably can do this for the lists above as well
+            if(all_grid_max_pc == None):
+                all_grid_max_pc = tmp_grid_max_pc # 1x19,19x2
+            else:
+                all_grid_max_pc = K.concatenate([all_grid_max_pc,tmp_grid_max_pc],0) # mx19,19x2
 
         all_boxes_xy = K.stack(all_boxes_xy, axis=0)
         all_scores = K.stack(all_scores, axis=0)
         all_classes = K.stack(all_classes, axis=0)
 
-        return all_scores, all_boxes_xy, all_classes
+        return all_scores, all_boxes_xy, all_classes, all_grid_max_pc
 
     def yolo_filter_boxes(self, box_confidence, boxes_xy, box_class_probs, threshold = .6):
         """Filters YOLO boxes by thresholding on object and class confidence.
@@ -835,10 +853,10 @@ class yolo_demo(BaseException):
         nprint("Raw  input image size             = {} {} {}".format(rows,cols,rgb))
 
         # Opencv method to rotate images
-        M = cv2.getRotationMatrix2D((cols/2,rows/2),self.rotation,1)
+        M = cv2.getRotationMatrix2D((cols/2,rows/2),self.get_rotation(),1)
 
         image_size_tuple = (cols,rows)
-        if(self.rotation % 180 == 90) :
+        if(self.get_rotation() % 180 == 90) :
             image_size_tuple = (rows,cols)
 
 
@@ -860,9 +878,36 @@ class yolo_demo(BaseException):
             #plot_image(resized_image3)
 
         return rv_rotated_image,rv_scaled_image
+    def shade_image_19_19(self, image_data_orig, out_grid_max_pc, colors, threshold=0.5) :
+        '''
+        stub for image mod ....
+        '''
+        nprint("## Grid Summary ##")
+        nprint("## Object Probability Threshold for plot = {} ##".format(threshold))
+
+        image_data = np.copy(image_data_orig)
+        row,col,data = out_grid_max_pc.shape
+        disc_classes = dict()
+        for i in range(0,row):
+            for j in range(0,col):
+                prob      = out_grid_max_pc[i][j][0]
+                class_idx = out_grid_max_pc[i][j][1]
+                str = ''
+                if(prob > threshold) :
+                    str = '{:02d} '.format(int(class_idx))
+                    disc_classes[int(class_idx)] = self.class_names()[int(class_idx)]
+                else :
+                    str = ' . '
+                print(str,end='')
+            print("\n",end='')
+
+        print("{0}  {1}".format('class index','name'))
+
+        for k,v in disc_classes.items() :
+            print("{0}         {1}".format(k,v))
 
 
-    def draw_boxes(self, image_data_orig, out_scores, out_boxes_xy, out_classes, colors):
+    def draw_boxes(self, image_data_orig, out_scores, out_boxes_xy, out_classes, colors, with_grid=True, grid_size=100):
         '''
         
         :param image_data: h,w,c tensor
@@ -878,30 +923,34 @@ class yolo_demo(BaseException):
 
         # assert(image_data.shape == (1920,1920,3))
 
+        nprint("## Box Summary ##")
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names()[c]
             box_xy = out_boxes_xy[i]
             score = out_scores[i]
 
-            nprint("score = {0}, boxes={1}".format(score,box_xy))
-            label = '{} {:.2f}'.format(predicted_class, score)
+            #nprint("score = {0}, boxes={1}".format(score,box_xy))
 
             # label_size = draw.textsize(label, font)
 
-            left, top, right, bottom  = box_xy
-            top = max(0, np.floor(top + 0.5).astype('int32'))
-            left = max(0, np.floor(left + 0.5).astype('int32'))
+            xmin, ymin, xmax, ymax  = box_xy
+            ymin = max(0, np.floor(ymin + 0.5).astype('int32'))
+            xmin = max(0, np.floor(xmin + 0.5).astype('int32'))
 
-            bottom = min(image_data.shape[0], np.floor(bottom + 0.5).astype('int32'))
-            right = min(image_data.shape[1], np.floor(right + 0.5).astype('int32'))
-            nprint("i={} c={} label={} xmin,ymin={} xmax,ymax={}".format(i,c,label, (left, top), (right, bottom) ))
+            ymax = min(image_data.shape[0], np.floor(ymax + 0.5).astype('int32'))
+            xmax = min(image_data.shape[1], np.floor(xmax + 0.5).astype('int32'))
+
+            label = '{} {:.2f}'.format(predicted_class, score)
+            nprint("{} classIdx={:2d} label={} xmin,ymin={} xmax,ymax={}".format(i, c,label, (xmin, ymin), (xmax, ymax) ))
 
             font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(image_data,predicted_class,(left,top), font, 1,colors[c],2,cv2.LINE_AA)
-            image_data = cv2.rectangle(image_data,(left,top),(right,bottom),colors[c],3)
+            cv2.putText(image_data,str(i) + " " + predicted_class,(xmin,ymin), font, 1,colors[c],2,cv2.LINE_AA)
+            image_data = cv2.rectangle(image_data,(xmin,ymin),(xmax,ymax),colors[c],3)
 
-            # draw a 100 x 100 grid for obj labelling ...
-            image_data = self.draw_grid(image_data, 100)
+        # draw a 100 x 100 grid for obj labelling ...
+        if(with_grid == True) :
+            nprint("Drawing {}x{} grid on image for debugging".format(grid_size,grid_size))
+            image_data = self.draw_grid(image_data, grid_size)
 
         return image_data
 
@@ -980,13 +1029,13 @@ class yolo_demo(BaseException):
         # can plot image data b/c of added dimension ... plot_image(image_data)
 
         # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
-        out_boxes_xy, out_scores, out_classes = self.sess.run([self.boxes_xy, self.scores, self.classes],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
+        out_boxes_xy, out_scores, out_classes, out_grid_max_pc = self.sess.run([self.boxes_xy, self.scores, self.classes, self.grid_max_pc],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
 
         # TODO : convert tensors to Lists?
 
-        return out_boxes_xy, out_scores, out_classes, image_rotate
+        return out_boxes_xy, out_scores, out_classes, out_grid_max_pc, image_rotate
 
-    def process_image(self) :
+    def process_image(self, output_image="images/coco_inference.jpg", with_grid=True) :
         """
         Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
         Arguments:
@@ -996,7 +1045,7 @@ class yolo_demo(BaseException):
         image_np = cv2.imread(self.input_vi())
         frame = np.ones((self.batch_size,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
         frame[0] = image_np
-        out_boxes_xy, out_scores, out_classes, image_rotate = self.process_frame(frame)
+        out_boxes_xy, out_scores, out_classes, out_grid_max_pc, image_rotate = self.process_frame(frame)
         # Print predictions info
         for i in range(0,self.batch_size):
             print('Found {} boxes for current batch {}'.format(len(out_boxes_xy[i]),i))
@@ -1006,15 +1055,17 @@ class yolo_demo(BaseException):
 
         # Create a Image  ....
 
-        image_modified = self.draw_boxes(image_data_orig=image_rotate[0], out_scores=out_scores[0], out_boxes_xy=out_boxes_xy[0], out_classes=out_classes[0], colors=colors)
+        image_modified = self.draw_boxes(image_data_orig=image_rotate[0], out_scores=out_scores[0], out_boxes_xy=out_boxes_xy[0], out_classes=out_classes[0], colors=colors, with_grid=with_grid)
+        image_shaded = self.shade_image_19_19(image_data_orig=image_rotate[0], out_grid_max_pc=out_grid_max_pc[0], colors=colors)
 
         # plot_image(image_modified)
         # Display the resulting frame
         im_uint8 = image_modified.astype('uint8')
-        plot_image(im_uint8)
+        # plot_image(im_uint8)
 
         nprint("Output image shape {}".format(im_uint8.shape))
-        cv2.imwrite("golden.jpg",im_uint8)
+        nprint("Writing image to  {}".format(output_image))
+        cv2.imwrite(output_image,im_uint8)
 
 
     def process_video(self, output_filename="tmp.mov"):
@@ -1062,7 +1113,7 @@ class yolo_demo(BaseException):
             # frame = cv2.imread(self.input_vi)
             nprint("loop count {} : Frame shape = {}".format(loop_cnt,frame.shape))
 
-            out_boxes_xy, out_scores, out_classes, image_rotate = self.process_frame(frame)
+            out_boxes_xy, out_scores, out_classes, out_grid_max_pc, image_rotate = self.process_frame(frame)
 
             # Print predictions info
             for i in range(0,self.batch_size):
@@ -1459,7 +1510,11 @@ if __name__ == '__main__':
     #            anchor_file="./retrain/yolo_anchors.txt")
 
     # Infer Image using golden model
-    infer_image(input_image="/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg",
+
+    #"/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg"
+    "./images/wine-glass-sizes.jpg"
+
+    infer_image(input_image="./images/safari2.jpg",
                 audit_mode=True,
                 tfdbg=False,
                 mode="gold")
