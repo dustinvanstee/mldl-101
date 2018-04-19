@@ -689,6 +689,7 @@ class yolo_demo(BaseException):
         #trainable=False
         # all_scores = tf.get_variable(name="all_scores",shape=(),initializer=tf.zeros_initializer(),dtype=tf.float32,collections=[tf.GraphKeys.LOCAL_VARIABLES])
 
+        # The number of boxes per frame is variable !! cant be stacked in traditional sense
         all_boxes_xy = []
         all_scores = []
         all_classes = []
@@ -734,9 +735,10 @@ class yolo_demo(BaseException):
             else:
                 all_grid_max_pc = K.concatenate([all_grid_max_pc,tmp_grid_max_pc],0) # mx19,19x2
 
-        all_boxes_xy = K.stack(all_boxes_xy, axis=0)
-        all_scores = K.stack(all_scores, axis=0)
-        all_classes = K.stack(all_classes, axis=0)
+        #Todo : potentially remove -> Images only, convert to Tensor ...
+        # all_boxes_xy = K.stack(all_boxes_xy, axis=0)
+        #all_scores = K.stack(all_scores, axis=0)
+        # all_classes = K.stack(all_classes, axis=0)
 
         return all_scores, all_boxes_xy, all_classes, all_grid_max_pc
 
@@ -1087,6 +1089,9 @@ class yolo_demo(BaseException):
         cap = cv2.VideoCapture(self.input_vi())
         max_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         nprint("Total # frames in input movie = {0}".format(max_frames))
+        nprint("Batch Size = {}".format(str(self.batch_size)))
+        nprint("Frame Stride = {}".format(str(self.frame_stride)))
+
         nprint("Each loop will consume {0} frames ".format(str(self.batch_size *  self.frame_stride)))
 
         # Define the codec and create VideoWriter object
@@ -1097,6 +1102,7 @@ class yolo_demo(BaseException):
 
         loop_cnt = 0
         num_batches_to_process = int(max_frames / (self.batch_size *  self.frame_stride))
+        nprint("Total number of loops = {} ".format(str(num_batches_to_process)))
         frame = np.ones((self.batch_size,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
 
 
@@ -1111,7 +1117,9 @@ class yolo_demo(BaseException):
 
             # Load an color image in grayscale
             # frame = cv2.imread(self.input_vi)
+            nprint("--------------------------------------------------")
             nprint("loop count {} : Frame shape = {}".format(loop_cnt,frame.shape))
+            nprint("--------------------------------------------------")
 
             out_boxes_xy, out_scores, out_classes, out_grid_max_pc, image_rotate = self.process_frame(frame)
 
@@ -1126,14 +1134,18 @@ class yolo_demo(BaseException):
             for m in range(0,self.batch_size):
                 # Draw bounding boxes on the image file
                 #plot_image(image_rotate[m].astype('uint8'))
+                nprint("Image {} of {}".format(m, self.batch_size))
                 image_modified = self.draw_boxes(image_data_orig=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors)
                 #plot_image(image_modified.astype('uint8'))
 
                 # plot_image(image_modified)
                 # Display the resulting frame
                 im_uint8 = image_modified.astype('uint8')
-                cv2.imshow('frame',im_uint8)
-                nprint("Output image shape {}".format(im_uint8.shape))
+
+                # Debug only
+                # cv2.imshow('frame',im_uint8)
+                # nprint("Output image shape {}".format(im_uint8.shape))
+
                 out.write(im_uint8)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
@@ -1163,9 +1175,7 @@ class yolo_demo(BaseException):
         out.release()
         cap.release()
         cv2.destroyAllWindows()
-
-
-
+        nprint("Processed video saved here {}".format(output_filename))
 
 
 #################### End Class yolo_demo ################################
@@ -1384,16 +1394,14 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-def infer_video(input_video, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
+def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video.mov", mode="gold", weights="path_to_weights",
           arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
     '''
-     mode = ["gold" , "retrained"]
+      mode = ["gold" , "retrained"]
        gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
        retrained used a supplied architecture and weights
     '''
 
-    args = _parser()
-    dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
 
     # 270 for mov // 0 for mp4...
@@ -1415,18 +1423,23 @@ def infer_video(input_video, audit_mode=False,  output_dir="./output", mode="gol
     mydemo.print_model_summary()
 
     # post processed file saved to name below
-    mydemo.process_video(output_filename="clear.mov")
+    mydemo.process_video(output_filename=output_filename)
 
-def infer_image(input_image, audit_mode=False,  output_dir="./output", mode="gold", weights="path_to_weights",
-                arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", tfdbg=False):
+def infer_image(input_image, audit_mode=False,
+                output_image="./images/coco_inference.jpg",
+                mode="gold", weights="path_to_weights",
+                arch="path_to_arch", class_file="./model_data/coco_classes.txt",
+                anchor_file="./model_data/yolo_anchors.txt",
+                max_boxes=15, score_threshold=0.5, iou_threshold=0.5,
+                tfdbg=False):
     '''
      mode = ["gold" , "retrained"]
        gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
        retrained used a supplied architecture and weights
     '''
 
-    args = _parser()
-    dev_cnt = 0 if args.device == 'cpu' else 1
+    # args = _parser()
+    # dev_cnt = 0 if args.device == 'cpu' else 1
     sess = K.get_session()
 
     if(tfdbg == True) :
@@ -1444,16 +1457,15 @@ def infer_image(input_image, audit_mode=False,  output_dir="./output", mode="gol
 
     # plot_image(input_image)
     # mydemo.play_video()
-    mydemo.output_dir(output_dir, overwrite=True)
     mydemo.audit_mode(audit_mode)
     mydemo.vi_mode("image")
     mydemo.set_image_shape()
     mydemo.infer_mode(mode)
-    mydemo.load_and_build_graph(arch,weights)
+    mydemo.load_and_build_graph(arch,weights, max_boxes=max_boxes, score_threshold=score_threshold, iou_threshold=iou_threshold)
     mydemo.print_model_summary()
 
     file_writer = tf.summary.FileWriter('./tensorboard', sess.graph)
-    mydemo.process_image()
+    mydemo.process_image(output_image=output_image)
 
 
 def retrain():
@@ -1482,10 +1494,11 @@ if __name__ == '__main__':
     np.random.seed(1)
 
     # Run Inference on a Video using a golden model
-    #infer_video(input_video="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
-    #            audit_mode=True,
-    #            output_dir="./output",
-    #            mode="gold") # models/yolo.h5
+    # "/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4"
+    infer_video(input_video="./sampleVideos/ElephantStampede.mp4",
+                audit_mode=False,
+                output_dir="./output/",
+                mode="gold") # models/yolo.h5
 
     #retrain()
 
@@ -1512,13 +1525,17 @@ if __name__ == '__main__':
     # Infer Image using golden model
 
     #"/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg"
-    "./images/wine-glass-sizes.jpg"
+    # "./images/wine-glass-sizes.jpg"
 
-    infer_image(input_image="./images/safari2.jpg",
-                audit_mode=True,
-                tfdbg=False,
-                mode="gold")
-#
+    #infer_image(input_image="./images/safari2.jpg",
+    #            output_image="./images/safari_boxes.jpg",
+    #            score_threshold=0.5,
+    #            iou_threshold=0.5,
+    #            max_boxes=15,
+    #            audit_mode=True,
+    #            tfdbg=False,
+    #            mode="gold")
+##
 
     
 '''
