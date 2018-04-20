@@ -253,6 +253,7 @@ class yolo_demo(BaseException):
         nprint("Stage1 Training Complete Writing model_wgts_retrain_stage1.h5")
 
         ## Lets GO!!
+        ## dirty hack
         test = model_final_wloss.predict(x=[image_X, labels_Y], batch_size=None, verbose=0, steps=None)
         a=1
 
@@ -880,11 +881,12 @@ class yolo_demo(BaseException):
             #plot_image(resized_image3)
 
         return rv_rotated_image,rv_scaled_image
+
     def shade_image_19_19(self, image_data_orig, out_grid_max_pc, colors, threshold=0.5) :
         '''
         stub for image mod ....
         '''
-        nprint("## Grid Summary ##")
+        nprint("\n\n## Grid Summary ##")
         nprint("## Object Probability Threshold for plot = {} ##".format(threshold))
 
         image_data = np.copy(image_data_orig)
@@ -908,6 +910,19 @@ class yolo_demo(BaseException):
         for k,v in disc_classes.items() :
             print("{0}         {1}".format(k,v))
 
+    def count_classes(self, out_classes):
+        nprint("\n\n## Class Count Summary ##")
+        class_count = {}
+        for i, c in reversed(list(enumerate(out_classes))):
+            predicted_class = self.class_names()[c]
+
+            if predicted_class in class_count :
+                class_count[predicted_class] += 1
+            else :
+                class_count[predicted_class] = 0
+
+        for (k,v) in class_count.items() :
+            nprint("{} {}".format(k,v))
 
     def draw_boxes(self, image_data_orig, out_scores, out_boxes_xy, out_classes, colors, with_grid=True, grid_size=100):
         '''
@@ -925,7 +940,7 @@ class yolo_demo(BaseException):
 
         # assert(image_data.shape == (1920,1920,3))
 
-        nprint("## Box Summary ##")
+        nprint("\n\n## Box Summary ##")
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names()[c]
             box_xy = out_boxes_xy[i]
@@ -1060,6 +1075,9 @@ class yolo_demo(BaseException):
         image_modified = self.draw_boxes(image_data_orig=image_rotate[0], out_scores=out_scores[0], out_boxes_xy=out_boxes_xy[0], out_classes=out_classes[0], colors=colors, with_grid=with_grid)
         image_shaded = self.shade_image_19_19(image_data_orig=image_rotate[0], out_grid_max_pc=out_grid_max_pc[0], colors=colors)
 
+        # Class Summary
+        self.count_classes(out_classes=out_classes[0])
+
         # plot_image(image_modified)
         # Display the resulting frame
         im_uint8 = image_modified.astype('uint8')
@@ -1070,7 +1088,7 @@ class yolo_demo(BaseException):
         cv2.imwrite(output_image,im_uint8)
 
 
-    def process_video(self, output_filename="tmp.mov"):
+    def process_video(self, output_filename="tmp.mov", with_grid=False):
         """
         Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
 
@@ -1135,7 +1153,7 @@ class yolo_demo(BaseException):
                 # Draw bounding boxes on the image file
                 #plot_image(image_rotate[m].astype('uint8'))
                 nprint("Image {} of {}".format(m, self.batch_size))
-                image_modified = self.draw_boxes(image_data_orig=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors)
+                image_modified = self.draw_boxes(image_data_orig=image_rotate[m], out_scores=out_scores[m], out_boxes_xy=out_boxes_xy[m], out_classes=out_classes[m], colors=colors, with_grid=with_grid)
                 #plot_image(image_modified.astype('uint8'))
 
                 # plot_image(image_modified)
@@ -1473,8 +1491,7 @@ def retrain():
     Retrains model based on image set defined in preconfigured json file.  No video / image passed here
     :return: writes out new models in current working directory.  This can be cleaned up when working better
     '''
-    args = _parser()
-    dev_cnt = 0 if args.device == 'cpu' else 1
+
     sess = K.get_session()
 
     # TF Debugger... try standard!
@@ -1495,21 +1512,21 @@ if __name__ == '__main__':
 
     # Run Inference on a Video using a golden model
     # "/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4"
-    infer_video(input_video="./sampleVideos/ElephantStampede.mp4",
-                audit_mode=False,
-                output_dir="./output/",
-                mode="gold") # models/yolo.h5
-
+    #infer_video(input_video="./sampleVideos/ElephantStampede.mp4",
+    #            audit_mode=False,
+    #            output_dir="./output/",
+    #            mode="gold") # models/yolo.h5
+#
     #retrain()
 
-    #infer_video(input_vi="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
-    #      audit_mode=False,
-    #      output_dir="./retrain_output",
-    #      mode="retrained",
-    #      arch="retrain_arch.json",
-    #      weights="./model_wgts_retrain_stage2.h5",
-    #      class_file="./retrain/clear_classes.txt",
-    #      anchor_file="./retrain/yolo_anchors.txt")
+    infer_video(input_video="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
+          audit_mode=False,
+          output_dir="./retrain_output",
+          mode="retrained",
+          arch="retrain_arch.json",
+          weights="./model_wgts_retrain_stage2.h5",
+          class_file="./retrain/clear_classes.txt",
+          anchor_file="./retrain/yolo_anchors.txt")
 
 
 
