@@ -1413,7 +1413,7 @@ def nprint(mystring) :
 
 
 def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video.mov", mode="gold", weights="path_to_weights",
-          arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt"):
+          arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", batch_size=8,frame_stride=30):
     '''
       mode = ["gold" , "retrained"]
        gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
@@ -1427,8 +1427,8 @@ def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_f
         _input_vi=input_video,
         _class_names=read_classes(class_file),
         _anchors=read_anchors(anchor_file),
-        batch_size=8,
-        frame_stride=30)
+        batch_size=batch_size,
+        frame_stride=frame_stride)
     
 
     # mydemo.play_video()
