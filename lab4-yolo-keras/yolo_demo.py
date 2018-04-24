@@ -29,7 +29,7 @@ import random
 import colorsys
 
 # Globals
-GOLDEN_MODEL = "./model_data/yolo.h5"
+DARKNET_MODEL = "./model_data/yolo.h5"
 
 def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
@@ -59,7 +59,7 @@ class yolo_demo(BaseException):
         self._class_names = _class_names
         self._anchors = _anchors
         self._retrain_file = None
-        self._infer_mode = None  # gold, retrain
+        self._infer_mode = None  # darknet, retrain
         self._vi_mode = None  # image, video
 
     # Setters/Getters
@@ -163,7 +163,7 @@ class yolo_demo(BaseException):
         rv=0
         if(self.input_vi() != None) :
             if( re.search("\.mov", self.input_vi())) :
-                rv = 270
+                rv = 0
             elif( re.search("\.mp4", self.input_vi())) :
                 rv = 0
             elif( re.search("\.jpg", self.input_vi())) :
@@ -180,9 +180,9 @@ class yolo_demo(BaseException):
         return rv
     
     def load_and_build_graph(self, arch, weights, max_boxes=10, score_threshold=.5, iou_threshold=.5) :
-        if(self.infer_mode() == "gold") :
-            nprint("Loading GOLDEN Model")
-            self.yolo_model = load_model(GOLDEN_MODEL)
+        if(self.infer_mode() == "darknet") :
+            nprint("Loading DARKNET Model")
+            self.yolo_model = load_model(DARKNET_MODEL)
         else :
             nprint("Loading your retrained Model")
             self.yolo_model = model_from_json(open(arch).read())
@@ -382,7 +382,7 @@ class yolo_demo(BaseException):
         labels_Y = Input(shape=(19,19,len(self.anchors()),1+4+len(self.class_names())))
 
         # Create model body and remove last layer.
-        yolo_model = load_model(GOLDEN_MODEL)
+        yolo_model = load_model(DARKNET_MODEL)
         # print(yolo_model.summary())
 
         #____________________________________________________________________________________________________
@@ -940,7 +940,7 @@ class yolo_demo(BaseException):
 
         # assert(image_data.shape == (1920,1920,3))
 
-        nprint("\n\n## Box Summary ##")
+        #nprint("\n\n## Box Summary ##")
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names()[c]
             box_xy = out_boxes_xy[i]
@@ -996,8 +996,8 @@ class yolo_demo(BaseException):
         
         frame_cnt=0
         while(cap.isOpened() and frame_cnt < num_frames):
-            # Capture frame-by-frame
-            ret, frame = cap.read()
+            # Cret, frame = cap.read()apture frame-by-frame
+
             #assert(frame.dtype.name == 'uint8')
         
             # Display the resulting frame
@@ -1123,8 +1123,6 @@ class yolo_demo(BaseException):
         nprint("Total number of loops = {} ".format(str(num_batches_to_process)))
         frame = np.ones((self.batch_size,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
 
-
-        # TODO : use max_frames to limit frame loop
         while(cap.isOpened() and loop_cnt < num_batches_to_process ):
             # frame is an ndarray of nhwc
             for j in range(0,self.batch_size) :
@@ -1412,11 +1410,11 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video.mov", mode="gold", weights="path_to_weights",
+def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video.mov", mode="darknet", weights="path_to_weights",
           arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", batch_size=8,frame_stride=30):
     '''
-      mode = ["gold" , "retrained"]
-       gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
+      mode = ["darknet" , "retrained"]
+       darknet is uses the original yolo model ./model_data/yolo.h5 DARKNET_MODEL
        retrained used a supplied architecture and weights
     '''
 
@@ -1441,18 +1439,18 @@ def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_f
     mydemo.print_model_summary()
 
     # post processed file saved to name below
-    mydemo.process_video(output_filename=output_filename)
+    mydemo.process_video(output_filename=output_filename,with_grid=False)
 
 def infer_image(input_image, audit_mode=False,
                 output_image="./images/coco_inference.jpg",
-                mode="gold", weights="path_to_weights",
+                mode="darknet", weights="path_to_weights",
                 arch="path_to_arch", class_file="./model_data/coco_classes.txt",
                 anchor_file="./model_data/yolo_anchors.txt",
                 max_boxes=15, score_threshold=0.5, iou_threshold=0.5,
                 tfdbg=False):
     '''
-     mode = ["gold" , "retrained"]
-       gold is uses the original yolo model ./model_data/yolo.h5 GOLDEN_MODEL
+     mode = ["darknet" , "retrained"]
+       darknet is uses the original yolo model ./model_data/yolo.h5 DARKNET_MODEL
        retrained used a supplied architecture and weights
     '''
 
@@ -1483,7 +1481,7 @@ def infer_image(input_image, audit_mode=False,
     mydemo.print_model_summary()
 
     file_writer = tf.summary.FileWriter('./tensorboard', sess.graph)
-    mydemo.process_image(output_image=output_image)
+    mydemo.process_image(output_image=output_image,with_grid=False)
 
 
 def retrain():
@@ -1510,12 +1508,12 @@ def retrain():
 if __name__ == '__main__':
     np.random.seed(1)
 
-    # Run Inference on a Video using a golden model
+    # Run Inference on a Video using a darknet model
     # "/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4"
     #infer_video(input_video="./sampleVideos/ElephantStampede.mp4",
     #            audit_mode=False,
     #            output_dir="./output/",
-    #            mode="gold") # models/yolo.h5
+    #            mode="darknet") # models/yolo.h5
 #
     #retrain()
 
@@ -1539,7 +1537,7 @@ if __name__ == '__main__':
     #            class_file="./retrain/clear_classes.txt",
     #            anchor_file="./retrain/yolo_anchors.txt")
 
-    # Infer Image using golden model
+    # Infer Image using darknet model
 
     #"/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg"
     # "./images/wine-glass-sizes.jpg"
@@ -1551,7 +1549,7 @@ if __name__ == '__main__':
     #            max_boxes=15,
     #            audit_mode=True,
     #            tfdbg=False,
-    #            mode="gold")
+    #            mode="darknet")
 ##
 
     
