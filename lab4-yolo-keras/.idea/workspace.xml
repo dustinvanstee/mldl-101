@@ -16,8 +16,8 @@
       <file leaf-file-name="yolo_demo.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/yolo_demo.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="282">
-              <caret line="1125" column="0" lean-forward="false" selection-start-line="1125" selection-start-column="0" selection-end-line="1125" selection-end-column="0" />
+            <state relative-caret-position="558">
+              <caret line="1437" column="33" lean-forward="true" selection-start-line="1437" selection-start-column="33" selection-end-line="1437" selection-end-column="33" />
               <folding>
                 <element signature="e#256#277#0" expanded="true" />
               </folding>
@@ -701,12 +701,12 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/yolo_demo.py</url>
-          <line>1458</line>
+          <line>1460</line>
           <option name="timeStamp" value="133" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/yolo_demo.py</url>
-          <line>1517</line>
+          <line>1519</line>
           <option name="timeStamp" value="135" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
@@ -1115,8 +1115,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/yolo_demo.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="282">
-          <caret line="1125" column="0" lean-forward="false" selection-start-line="1125" selection-start-column="0" selection-end-line="1125" selection-end-column="0" />
+        <state relative-caret-position="558">
+          <caret line="1437" column="33" lean-forward="true" selection-start-line="1437" selection-start-column="33" selection-end-line="1437" selection-end-column="33" />
           <folding>
             <element signature="e#256#277#0" expanded="true" />
           </folding>

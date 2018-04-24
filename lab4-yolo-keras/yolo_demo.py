@@ -1110,7 +1110,10 @@ class yolo_demo(BaseException):
         nprint("Batch Size = {}".format(str(self.batch_size)))
         nprint("Frame Stride = {}".format(str(self.frame_stride)))
 
-        nprint("Each loop will consume {0} frames ".format(str(self.batch_size *  self.frame_stride)))
+        # the frame stride + 1 is due to the fact that I read one frame... and then skip frame stride ...
+
+        outer_loop_frames = self.batch_size *  (self.frame_stride + 1)
+        nprint("Each loop will consume {0} frames ".format(str(outer_loop_frames)))
 
         # Define the codec and create VideoWriter object
         fourcc = cv2.VideoWriter_fourcc(*'mpv4')
@@ -1119,7 +1122,7 @@ class yolo_demo(BaseException):
 
 
         loop_cnt = 0
-        num_batches_to_process = int(max_frames / (self.batch_size *  self.frame_stride))
+        num_batches_to_process = int(max_frames / outer_loop_frames)
         nprint("Total number of loops = {} ".format(str(num_batches_to_process)))
         frame = np.ones((self.batch_size,self.get_image_shape("height") ,self.get_image_shape("width"),self.get_image_shape("channels")),dtype="uint8")
 
@@ -1436,7 +1439,6 @@ def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_f
     mydemo.set_image_shape()
     mydemo.infer_mode(mode)
     mydemo.load_and_build_graph(arch,weights)
-    mydemo.print_model_summary()
 
     # post processed file saved to name below
     mydemo.process_video(output_filename=output_filename,with_grid=False)
