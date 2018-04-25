@@ -1128,7 +1128,7 @@ class yolo_demo(BaseException):
             out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mpv4'), 10.0, (self.get_image_shape("width"),self.get_image_shape("height")), True)
         elif(self.system() == 'ppc64le') :
             nprint("Writing avi video format for ppc64le")
-            output_filename = output_filename + ".mov"
+            output_filename = output_filename + ".avi"
             out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (self.get_image_shape("width"),self.get_image_shape("height")), True)
         else :
             nprint("Error : Unsupported machine type {}".format(self.system()))
