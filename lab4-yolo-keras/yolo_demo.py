@@ -15,6 +15,7 @@ import sys
 import re
 import json
 import shutil
+import subprocess
 
 import tensorflow as tf
 from keras import backend as K
@@ -65,6 +66,10 @@ class yolo_demo(BaseException):
     # Setters/Getters
 
     #Input Video or Image.  Mode for the yolo demo is controlled by vi_mode.
+
+    def system(self) :
+        return subprocess.getoutput('uname -m')
+
     # If using video, vi_mode = video and vice versa
     def input_vi(self,val=None) :
         if(val == None) : # get
@@ -1088,7 +1093,7 @@ class yolo_demo(BaseException):
         cv2.imwrite(output_image,im_uint8)
 
 
-    def process_video(self, output_filename="tmp.mov", with_grid=False):
+    def process_video(self, output_filename="processed_video", with_grid=False):
         """
         Runs the graph stored in "sess" to predict boxes for "image_file". Prints and plots the preditions.
 
@@ -1101,7 +1106,6 @@ class yolo_demo(BaseException):
         output_filename = self.append_output_path(output_filename)
         if os.path.exists(output_filename):
             os.remove(output_filename)
-        nprint("Saving new movie here {}".format(output_filename))
 
         # Read in video stream
         cap = cv2.VideoCapture(self.input_vi())
@@ -1116,9 +1120,20 @@ class yolo_demo(BaseException):
         nprint("Each loop will consume {0} frames ".format(str(outer_loop_frames)))
 
         # Define the codec and create VideoWriter object
-        fourcc = cv2.VideoWriter_fourcc(*'mpv4')
 
-        out = cv2.VideoWriter(output_filename, fourcc, 10.0, (self.get_image_shape("width"),self.get_image_shape("height")), True)
+        out = None
+        if(self.system() == 'x86_64') :
+            nprint("Writing MOV video format for x86_64")
+            output_filename = output_filename + ".mov"
+            out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'mpv4'), 10.0, (self.get_image_shape("width"),self.get_image_shape("height")), True)
+        elif(self.system() == 'ppc64le') :
+            nprint("Writing avi video format for ppc64le")
+            output_filename = output_filename + ".mov"
+            out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (self.get_image_shape("width"),self.get_image_shape("height")), True)
+        else :
+            nprint("Error : Unsupported machine type {}".format(self.system()))
+
+        nprint("Saving new movie here {}".format(output_filename))
 
 
         loop_cnt = 0
@@ -1413,7 +1428,7 @@ def nprint(mystring) :
     print("{} : {}".format(sys._getframe(1).f_code.co_name,mystring))
 
 
-def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video.mov", mode="darknet", weights="path_to_weights",
+def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video", mode="darknet", weights="path_to_weights",
           arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", batch_size=8,frame_stride=30):
     '''
       mode = ["darknet" , "retrained"]
