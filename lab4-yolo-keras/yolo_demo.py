@@ -62,7 +62,7 @@ class yolo_demo(BaseException):
         self._retrain_file = None
         self._infer_mode = None  # darknet, retrain
         self._vi_mode = None  # image, video
-
+        self.yolodbg = None
     # Setters/Getters
 
     #Input Video or Image.  Mode for the yolo demo is controlled by vi_mode.
@@ -197,6 +197,7 @@ class yolo_demo(BaseException):
 
             nprint("Instantiating graph (yolo_head)")
             yolo_outputs = self.yolo_head(self.yolo_model.output, self.anchors(), len(self.class_names()))
+            self.yolodbg = yolo_outputs
             nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
             nprint("Max Boxes = {}, Object Probability Threshold = {}, IOU threshold = {}".format(max_boxes,score_threshold,iou_threshold))
 
@@ -543,11 +544,15 @@ class yolo_demo(BaseException):
             else:
                 # Lets Scale these images here ... and load into an np array
                 # TODO : modify self.yolo_model_image_shape to return int instead of float
+                nprint("Adding {} to data structure ".format(i["image_id"]))
                 image_np = cv2.resize(image_np,(608,608),cv2.INTER_CUBIC)
                 image_np = np.array(image_np, dtype=np.float)
                 image_np = image_np/255.0
                 rv[i["image_id"]] = [image_np, [box_xywhc]]
 
+        for key in rv.keys() :
+            nprint("Added {} boxes for image {}".format(len(rv[key][1]), key))
+        nprint("Return dict of List(img, List(boxes)")
 
         # Convert Everything to numpy arrays ...
         #boxes =np.array([np.array( box_xy[i] + box_wh[i] +[ class_ary[i] ]) for i, box in enumerate(box_ary)])
@@ -650,7 +655,7 @@ class yolo_demo(BaseException):
         # feats = Reshape(
         #     (conv_dims[0], conv_dims[1], num_anchors, num_classes + 5))(feats)
 
-        box_xy = K.sigmoid(feats[..., :2])
+        box_xy = K.sigmoid(feats[..., 0:2])
         box_wh = K.exp(feats[..., 2:4])
         box_confidence = K.sigmoid(feats[..., 4:5])
         box_class_probs = K.softmax(feats[..., 5:])
@@ -1051,7 +1056,7 @@ class yolo_demo(BaseException):
         # can plot image data b/c of added dimension ... plot_image(image_data)
 
         # Run the session with the correct tensors and choose the correct placeholders in the feed_dict.
-        out_boxes_xy, out_scores, out_classes, out_grid_max_pc = self.sess.run([self.boxes_xy, self.scores, self.classes, self.grid_max_pc],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
+        out_boxes_xy, out_scores, out_classes, out_grid_max_pc, yolo_output = self.sess.run([self.boxes_xy, self.scores, self.classes, self.grid_max_pc, self.yolodbg],feed_dict={self.yolo_model.input: image_data , K.learning_phase(): 0})
 
         # TODO : convert tensors to Lists?
 
@@ -1388,22 +1393,48 @@ def select_anchorbox_index(box_xywhc,anchor_list,conv_width,conv_height) :
     return best_anchor
 
 # Encoding box with numpy
-def encode_box(box_xywh, conv_width, conv_height, best_anchor) :
+def encode_box_old(box_xywh, conv_width, conv_height, best_anchor) :
     (x,y) = get_grid_location(box_xywh,conv_height,conv_width)
 
+    nprint("x={} y={} box_xywh={} conv_height={} conv_width={} best_anchor={}".format(x,y,box_xywh,conv_height,conv_width,best_anchor))
     # Centers of the box relative to the assigned grid cell only
     adjusted_box = np.array(
         [
-            box_xywh[0]*conv_width - x, box_xywh[1]*conv_height - y,
-            np.log(box_xywh[2]*conv_width / best_anchor[0]),
-            np.log(box_xywh[3]*conv_height / best_anchor[1])
+            inv_sigmoid(box_xywh[0]*conv_width - x), inv_sigmoid(box_xywh[1]*conv_height - y),
+            np.log(box_xywh[2] / best_anchor[0]),
+            np.log(box_xywh[3] / best_anchor[1])
         ],
         dtype=np.float32)
+    nprint("adjusted_box={}".format(adjusted_box))
+
     assert(adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0 and adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0)
     return adjusted_box
 
+def encode_box(box_xywh, conv_width, conv_height, best_anchor) :
+    (x,y) = get_grid_location(box_xywh,conv_height,conv_width)
+
+    nprint("x={} y={} box_xywh={} conv_height={} conv_width={} best_anchor={}".format(x,y,box_xywh,conv_height,conv_width,best_anchor))
+    # Centers of the box relative to the assigned grid cell only
+    adjusted_box = np.array(
+        [
+            box_xywh[0],box_xywh[1],box_xywh[2],box_xywh[3]
+        ],
+        dtype=np.float32)
+    nprint("adjusted_box={}".format(adjusted_box))
+
+    assert(adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0 and adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0)
+    return adjusted_box
+
+def inv_sigmoid(x) :
+    epsilon = 0.001
+    return np.log((x/(1-(x+epsilon))) + epsilon)
+
+def sigmoid(x) :
+    return 1/(1 + np.exp(-x))
+
+
 # Decoding box with Keras
-def decode_box() :
+def decode_box(adjusted_box) :
     a=1
 
 
@@ -1429,7 +1460,8 @@ def nprint(mystring) :
 
 
 def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_filename="processed_video", mode="darknet", weights="path_to_weights",
-          arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", batch_size=8,frame_stride=30):
+          arch="path_to_arch", class_file="./model_data/coco_classes.txt", anchor_file="./model_data/yolo_anchors.txt", batch_size=8,frame_stride=30,
+          score_threshold=0.5, iou_threshold=0.5):
     '''
       mode = ["darknet" , "retrained"]
        darknet is uses the original yolo model ./model_data/yolo.h5 DARKNET_MODEL
@@ -1453,7 +1485,7 @@ def infer_video(input_video, audit_mode=False,  output_dir="./output/", output_f
     mydemo.audit_mode(audit_mode)
     mydemo.set_image_shape()
     mydemo.infer_mode(mode)
-    mydemo.load_and_build_graph(arch,weights)
+    mydemo.load_and_build_graph(arch,weights,score_threshold=score_threshold, iou_threshold=iou_threshold)
 
     # post processed file saved to name below
     mydemo.process_video(output_filename=output_filename,with_grid=False)
@@ -1495,8 +1527,7 @@ def infer_image(input_image, audit_mode=False,
     mydemo.set_image_shape()
     mydemo.infer_mode(mode)
     mydemo.load_and_build_graph(arch,weights, max_boxes=max_boxes, score_threshold=score_threshold, iou_threshold=iou_threshold)
-    mydemo.print_model_summary()
-
+    #mydemo.print_model_summary()
     file_writer = tf.summary.FileWriter('./tensorboard', sess.graph)
     mydemo.process_image(output_image=output_image,with_grid=False)
 
@@ -1527,7 +1558,7 @@ if __name__ == '__main__':
 
     # Run Inference on a Video using a darknet model
     # "/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4"
-    #infer_video(input_video="./sampleVideos/ElephantStampede.mp4",
+    #infer_video(input_video="./sampleVideos/ElephantStampede2.mov",
     #            audit_mode=False,
     #            output_dir="./output/",
     #            mode="darknet") # models/yolo.h5
@@ -1541,8 +1572,10 @@ if __name__ == '__main__':
           arch="retrain_arch.json",
           weights="./model_wgts_retrain_stage2.h5",
           class_file="./retrain/clear_classes.txt",
-          anchor_file="./retrain/yolo_anchors.txt")
-
+          anchor_file="./retrain/yolo_anchors.txt",
+          score_threshold=0.1,
+          iou_threshold=0.5)
+#
 
 
     ## Infer Image using retrained model
