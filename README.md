@@ -1,4 +1,4 @@
-# mldl-101
+# IBM Systems Technical University - YOLO Lab Directions
 
 ## Step 1
 Welcome to mldl-101 lab!  Please follow these instructions to get started with your lab environment running on the Nimbix Cloud.
@@ -36,6 +36,6 @@ Next your server will be deployed, wait a coupled of moments and you will see th
 
 ---
 ## You are now ready to proceed with the labs!
-1. Start with Lab4-yolo-keras.ipynb in your jupyter notebook
+1. Start with Lab4-yolo-keras/Yololab.ipynb in your jupyter notebook
 
 ..
