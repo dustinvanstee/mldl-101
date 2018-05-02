@@ -271,7 +271,7 @@ class yolo_demo(BaseException):
                               y=np.zeros(len(image_X)),
                               validation_split=0.0,
                               batch_size=32,
-                              epochs=70,
+                              epochs=700,
                               callbacks=[logging])
         nprint("Stage2 Training Complete .  Writing model_wgts_retrain_stage2.h5")
 
@@ -292,7 +292,7 @@ class yolo_demo(BaseException):
 
         # Hyperparameters
         prediction_scale_factor = 1
-        no_class_scale_factor = 1
+        no_class_scale_factor = 0.1
         class_scale_factor = 5
         coordinates_scale_factor = 1
 
@@ -317,7 +317,7 @@ class yolo_demo(BaseException):
         label_indicator_box = labels_pred_Y[..., 0:1]
         no_label_indicator_box = -1  * (label_indicator_box-1) # bit inversion here ..0->1, 1->0
         label_box_xy = labels_pred_Y[..., 1:3]
-        label_box_wh = labels_pred_Y[..., 4:5]
+        label_box_wh = labels_pred_Y[..., 3:5]
         label_class = labels_pred_Y[..., 5:5+len(self.class_names())]
 
         # Coordinate Loss xy
@@ -339,10 +339,11 @@ class yolo_demo(BaseException):
         no_class_loss = K.sum(no_class_loss)
 
         # Prediction Loss
-        prediction_loss = K.square( label_indicator_box - pred_confidence )
+        prediction_loss = prediction_scale_factor * K.square( label_indicator_box - pred_confidence )
         prediction_loss = K.sum(prediction_loss)
 
         total_loss = coordinate_loss_xy + coordinate_loss_wh + class_loss + no_class_loss + prediction_loss
+
         if print_loss:
             total_loss = tf.Print(
             total_loss, [
@@ -1563,7 +1564,7 @@ if __name__ == '__main__':
     #            output_dir="./output/",
     #            mode="darknet") # models/yolo.h5
 #
-    #retrain()
+    retrain()
 
     infer_video(input_video="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
           audit_mode=False,
@@ -1573,8 +1574,8 @@ if __name__ == '__main__':
           weights="./model_wgts_retrain_stage2.h5",
           class_file="./retrain/clear_classes.txt",
           anchor_file="./retrain/yolo_anchors.txt",
-          score_threshold=0.1,
-          iou_threshold=0.5)
+          score_threshold=0.3,
+          iou_threshold=0.7)
 #
 
 
