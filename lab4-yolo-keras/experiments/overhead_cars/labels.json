@@ -1,0 +1,13 @@
+[
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [111, 80, 169, 196], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [185, 77, 239, 202], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [250, 76, 307, 203], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [330, 70, 389, 206], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [536, 73, 597, 198], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [256, 222, 309, 363], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 0, "category_name": "car", "bbox_xymin_xymax": [330, 228, 377, 350], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 1, "category_name": "empty", "bbox_xymin_xymax": [382, 56, 459, 202], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 1, "category_name": "empty", "bbox_xymin_xymax": [451, 57, 530, 202], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 1, "category_name": "empty", "bbox_xymin_xymax": [102, 213, 180, 364], "score": 1.0},
+ {"image_id": "./experiments/overhead_cars/overhead_pkg_lot.jpg", "category_id": 1, "category_name": "empty", "bbox_xymin_xymax": [170, 214, 248, 363], "score": 1.0}
+]

@@ -6,6 +6,11 @@ Note : use your python virtual env :
  'source  /root/python3_env/bin/activate' (nimbix)
 '''
 
+''' TODO's
+    TODO : image check when reading a file.  if blank, currently doesnt throw a good error message  
+'''
+
+
 # add imports here ..
 import argparse as ap
 import os
@@ -199,7 +204,7 @@ class yolo_demo(BaseException):
             yolo_outputs = self.yolo_head(self.yolo_model.output, self.anchors(), len(self.class_names()))
             self.yolodbg = yolo_outputs
             nprint("Loading yolo eval.  Final part of yolo that perform non max suppression and scoring")
-            nprint("Max Boxes = {}, Object Probability Threshold = {}, IOU threshold = {}".format(max_boxes,score_threshold,iou_threshold))
+            nprint("Max Boxes = {}, Object Probability Threshold (Pobj*ProbCls) = {}, IOU threshold = {}".format(max_boxes,score_threshold,iou_threshold))
 
         self.scores, self.boxes_xy, self.classes, self.grid_max_pc = self.yolo_eval(yolo_outputs, max_boxes,score_threshold,iou_threshold) # sets self.scores, self.boxes, self.classes structures
 
@@ -223,10 +228,10 @@ class yolo_demo(BaseException):
 
         #3. add a new layer per your data set requirements
         #4. prepare X/Y
-        image_box_dict = self.parse_train_data() # return np array of processed images // boxes
+        image_box01_dict = self.parse_train_data() # return np array of processed images // boxes
 
         # Convert image_box_class dictionary to final data structures, fully formed np.arrays! X , Y
-        (image_X, labels_Y) = self.create_labels(image_box_dict,self.anchors())
+        (image_X, labels_encoded_Y) = self.create_labels(image_box01_dict,self.anchors())
 
         ##5. retrain
         '''
@@ -250,7 +255,7 @@ class yolo_demo(BaseException):
 
 
         nprint("Fitting Model ")
-        model_final_wloss.fit(x=[image_X, labels_Y],
+        model_final_wloss.fit(x=[image_X, labels_encoded_Y],
                   y=np.zeros(len(image_X)),
                   validation_split=0.0,
                   batch_size=32,
@@ -260,19 +265,20 @@ class yolo_demo(BaseException):
 
         ## Lets GO!!
         ## dirty hack
-        test = model_final_wloss.predict(x=[image_X, labels_Y], batch_size=None, verbose=0, steps=None)
+        test = model_final_wloss.predict(x=[image_X, labels_encoded_Y], batch_size=None, verbose=0, steps=None)
         a=1
 
 
         model_final_wloss.save_weights('model_wgts_retrain_stage1.h5')
 
         nprint("Fitting Model Phase 2")
-        model_final_wloss.fit(x=[image_X, labels_Y],
+        model_final_wloss.fit(x=[image_X, labels_encoded_Y],
                               y=np.zeros(len(image_X)),
                               validation_split=0.0,
                               batch_size=32,
-                              epochs=700,
+                              epochs=300,
                               callbacks=[logging])
+
         nprint("Stage2 Training Complete .  Writing model_wgts_retrain_stage2.h5")
 
         #model_final_wloss.save_weights('trained_stage_3.h5')
@@ -288,46 +294,50 @@ class yolo_demo(BaseException):
                   rescore_confidence=False,
                   print_loss=True) :
 
-        (yolo_output_layer, labels_tensor_Y) = args
+        (yolo_output_layer, labels_encoded_Y) = args
 
-        # Hyperparameters
+        # Hyperparameters - This is recommended for YoloV1 -- yoloV2 paper did not contain this.  so going with V1 paper
         prediction_scale_factor = 1
-        no_class_scale_factor = 0.1
-        class_scale_factor = 5
-        coordinates_scale_factor = 1
+        no_class_scale_factor = 0.5
+        class_scale_factor = 1
+        coordinates_scale_factor = 5
 
 
         num_anchors = len(self.anchors())
 
         # Generate Predictions
-        pred_xy, pred_wh, pred_confidence, pred_class_prob = self.yolo_head(yolo_output_layer, self.anchors(), len(self.class_names()))
 
-        yolo_output_shape = K.shape(yolo_output_layer)
+        pred_01_xy, pred_01_wh, pred_confidence, pred_class_prob = self.yolo_head(yolo_output_layer, self.anchors(), len(self.class_names()))
 
         # Restructure predictions so it will match labels_Y dimensions
         # should be (None, 19,19,len(anchors),(1+4+len(classes))
 
-        #labels_pred_Y = K.reshape(yolo_output_layer, [
-        #    -1, yolo_output_shape[1], yolo_output_shape[2], num_anchors,
-        #    num_classes + 5
-        #])
-        labels_pred_Y = labels_tensor_Y
+        # TODO : replace all this with yolo_head
 
+        # labels_pred_Y = labels_encoded_Y
         # Use Keras Indexing .. nice
-        label_indicator_box = labels_pred_Y[..., 0:1]
+        # label_indicator_box = labels_pred_Y[..., 0:1]
+        # no_label_indicator_box = -1  * (label_indicator_box-1) # bit inversion here ..0->1, 1->0
+        # label_box_xy = labels_pred_Y[..., 1:3]
+        # label_box_wh = labels_pred_Y[..., 3:5]
+        # label_class = labels_pred_Y[..., 5:5+len(self.class_names())]
+
+        label_box_xy, label_box_wh, label_indicator_box, label_class = self.yolo_head(labels_encoded_Y, self.anchors(), len(self.class_names()))
         no_label_indicator_box = -1  * (label_indicator_box-1) # bit inversion here ..0->1, 1->0
-        label_box_xy = labels_pred_Y[..., 1:3]
-        label_box_wh = labels_pred_Y[..., 3:5]
-        label_class = labels_pred_Y[..., 5:5+len(self.class_names())]
+
+
+
+
+
 
         # Coordinate Loss xy
-        coordinate_loss_xy = coordinates_scale_factor * label_indicator_box * K.square( label_box_xy - pred_xy)
+        coordinate_loss_xy = coordinates_scale_factor * label_indicator_box * K.square( label_box_xy - pred_01_xy)
         #coordinate_loss_xy = K.print_tensor(coordinate_loss_xy, message="coordinate_loss_xy is: ")
         #label_indicator_box = K.print_tensor(label_indicator_box, message="label_indicator_box is: ")
         coordinate_loss_xy = K.sum(coordinate_loss_xy)
 
         # Coordinate Loss wh
-        coordinate_loss_wh = coordinates_scale_factor * label_indicator_box * K.square( K.sqrt(label_box_wh) - K.sqrt(pred_wh))
+        coordinate_loss_wh = coordinates_scale_factor * label_indicator_box * K.square( K.sqrt(label_box_wh) - K.sqrt(pred_01_wh))
         coordinate_loss_wh = K.sum(coordinate_loss_wh)
 
         # Class Loss
@@ -363,13 +373,11 @@ class yolo_demo(BaseException):
         # Params:
 
         load_pretrained: whether or not to load the pretrained model or initialize all weights
-
         freeze_body: whether or not to freeze all weights except for the last layer's
 
         # Returns:
 
         model_body: YOLOv2 with new output layer
-
         model: YOLOv2 with custom loss Lambda layer
 
         '''
@@ -410,7 +418,7 @@ class yolo_demo(BaseException):
 
         model_final = Model(topless_yolo.input, final_layer)
 
-        print(model_final.summary())
+        # print(model_final.summary())
 
 
         # Place model loss on CPU to reduce GPU memory usage.
@@ -425,12 +433,12 @@ class yolo_demo(BaseException):
             )([  model_final.output, labels_Y ])
 
             model_final_wloss = Model([model_final.input, labels_Y], model_loss)
-            print(model_final_wloss.summary())
+            #print(model_final_wloss.summary())
 
         #return model_final, model_final_wloss
         return model_final, model_final_wloss
 
-    def create_labels(self, image_box_dict, anchors):
+    def create_labels(self, image_box01_dict, anchors):
         '''
         Precompute detectors_mask and box_data and one hot class vector for training.
         These will be concatenated Pc,x,y,w,h,c1..cN
@@ -463,6 +471,10 @@ class yolo_demo(BaseException):
         # Create a loop to and initially assign all zeros to grid
         # Then modify the grid cells that have boxes
 
+        ENC_ZERO = -999.0 # large negative number that will translate to zero when xformed...
+        SOFT_ENC_ONE =0 # zero will translate to one when xformed by sigmoid/softmax...
+        SIG_ENC_ONE = 999 # zero will translate to one when xformed by sigmoid/softmax...
+
 
         height, width = self.yolo_model_image_shape
         num_anchors = len(anchors)
@@ -474,25 +486,25 @@ class yolo_demo(BaseException):
         conv_width = int(width // 32)
 
 
-        label_detectors_mask = np.zeros(
-            (conv_height, conv_width, num_anchors, 1), dtype=np.float32)
+        label_detectors_mask = np.full(
+            (conv_height, conv_width, num_anchors, 1), ENC_ZERO, dtype=np.float32)
 
-        label_boxes = np.zeros(
-            (conv_height, conv_width, num_anchors, 4),
+        label_boxes_encode = np.full(
+            (conv_height, conv_width, num_anchors, 4), ENC_ZERO,
             dtype=np.float32)
 
-        label_classes = np.zeros(
-            (conv_height, conv_width, num_anchors, len(self.class_names())),
+        label_classes = np.full(
+            (conv_height, conv_width, num_anchors, len(self.class_names())),ENC_ZERO,
             dtype=np.float32)
 
         image_X = []
         # This loop fills in the label (Y values) with information about the boxes
         labels_Y = []
-        for img,box_list in image_box_dict.values() :
+        for img,box_01_list,dummy_shape in image_box01_dict.values() :
             image_X.append(img)
-            for box in box_list :
-                (x,y) = get_grid_location(box,conv_height,conv_width)
-                k = select_anchorbox_index(box,self.anchors(),conv_width,conv_height) # select anchorbox index with the best IOU
+            for box_01 in box_01_list :
+                (x,y) = get_grid_location(box_01,conv_height,conv_width)
+                k = select_anchorbox_index(box_01,self.anchors(),conv_width,conv_height) # select anchorbox index with the best IOU
 
                 # Now write Labels ....
 
@@ -501,14 +513,20 @@ class yolo_demo(BaseException):
                 # basically there is an encode box / decode box.  This is a better implementation than below .
 
                 if(k != None ) :
-                    label_detectors_mask[x, y, k] = 1
-                    label_boxes[x, y, k] = encode_box(box,conv_width,conv_height,self.anchors()[k])
+                    label_detectors_mask[y, x, k] = SIG_ENC_ONE
+                    label_boxes_encode[y, x, k] = box_01_to_encode(box_01,conv_width,conv_height,self.anchors()[k])
                     # Set the Class One hot vector
-                    class_index = box[4]
-                    class_one_hot = np.zeros(len(self.class_names()))
-                    class_one_hot[class_index] = 1
-                    label_classes[x,y,k] = class_one_hot
-            labels_Y.append(np.concatenate((label_detectors_mask,label_boxes,label_classes),axis=3))
+                    class_index = int(box_01[4])
+                    class_one_hot = np.full(len(self.class_names()),ENC_ZERO)
+                    class_one_hot[class_index] = SOFT_ENC_ONE
+                    label_classes[y,x,k] = class_one_hot
+                    nprint("Added box gridx={} gridy={} best_anchor={} box_enc={} prob_enc={} class_enc={}".format(x,y,k,label_boxes_encode[y, x, k],label_detectors_mask[y, x, k],label_classes[y,x,k]))
+
+            nprint("Box 000")
+            nprint("Added box gridx={} gridy={} best_anchor={} box_enc={} prob_enc={} class_enc={}".format(0,0,0,label_boxes_encode[0,0,0],label_detectors_mask[0,0,0],label_classes[0,0,0]))
+
+            # Organizing based on what yolo_head expects
+            labels_Y.append(np.concatenate((label_boxes_encode,label_detectors_mask,label_classes),axis=3))
 
 
         # Cast outer lists to ndarrays
@@ -529,19 +547,37 @@ class yolo_demo(BaseException):
         boxes_image_ptr_json =open(self._retrain_file).read()
         data = json.loads(boxes_image_ptr_json)
 
-        rv = {}
-        # Bui
+        # Return value ...
+        rv = {}  #0=image_np,1=List(boxes), 2=shape
+
+
         for i in data :
 
             # Record initial image size
-            image_np = cv2.imread(i["image_id"]) # TODO : add file exists check!
-            (r,c,rgb) = image_np.shape
+            image_np = None
+            r = None
+            c = None
+            rgb = None
 
-            box_list = i["bbox_xymin_xymax"] + [i["category_id"]]
-            box_xywhc = box_min_max_to_xcycwh(box_list , r, c)
 
             if i["image_id"] in rv.keys():
-                rv[i["image_id"]][1].append( box_xywhc )
+                image_np = rv[i["image_id"]][0] # TODO : add file exists check!
+                (r,c,rgb) = rv[i["image_id"]][2] # cast to float for downstream code
+            else :
+                if(os.path.exists(i["image_id"])) :
+                    image_np = cv2.imread(i["image_id"]) # TODO : add file exists check!
+                    (r,c,rgb) = image_np.shape # cast to float for downstream code
+                else :
+                    nprint("Error, cant read {}".format(i["image_id"]))
+
+            assert(r > 100 and c > 100 and rgb ==3)
+
+                # Cast X,Y coordinates to float for downstream code
+            box_list = [float(x) for x in i["bbox_xymin_xymax"]] + [i["category_id"]]
+            box_01_xywhc = box_min_max_to_xcycwh(box_list , r, c)
+
+            if i["image_id"] in rv.keys():
+                rv[i["image_id"]][1].append( box_01_xywhc )
             else:
                 # Lets Scale these images here ... and load into an np array
                 # TODO : modify self.yolo_model_image_shape to return int instead of float
@@ -549,7 +585,7 @@ class yolo_demo(BaseException):
                 image_np = cv2.resize(image_np,(608,608),cv2.INTER_CUBIC)
                 image_np = np.array(image_np, dtype=np.float)
                 image_np = image_np/255.0
-                rv[i["image_id"]] = [image_np, [box_xywhc]]
+                rv[i["image_id"]] = [image_np, [box_01_xywhc], (r,c,rgb)]
 
         for key in rv.keys() :
             nprint("Added {} boxes for image {}".format(len(rv[key][1]), key))
@@ -602,7 +638,9 @@ class yolo_demo(BaseException):
         Parameters
         ----------
         feats : tensor
-            Final convolutional layer features.
+            Final convolutional layer features. 
+            m x 19 x 19 x 40 ... where 40 = Nanc * BoxFeats
+            
         anchors : array-like
             Anchor box widths and heights.
         num_classes : int
@@ -629,20 +667,24 @@ class yolo_demo(BaseException):
         # conv_dims = K.variable([conv_width, conv_height])
 
         # Dynamic implementation of conv dims for fully convolutional model.
-        conv_dims = K.shape(feats)[1:3]
+        conv_dims = K.shape(feats)[1:3] # should be 19 x 19
         # In YOLO the height index is the inner most iteration.
-        conv_height_index = K.arange(0, stop=conv_dims[0])
-        conv_width_index = K.arange(0, stop=conv_dims[1])
-        conv_height_index = K.tile(conv_height_index, [conv_dims[1]])
+        conv_height_index = K.arange(0, stop=conv_dims[0]) # creates a 1D tensor [0:18] with vals [0,1,2...]
+        conv_width_index = K.arange(0, stop=conv_dims[1])  # creates a 1D tensor [0:18] with vals [0,1,2...]
+        conv_height_index = K.tile(conv_height_index, [conv_dims[1]]) # creates 19 [0:18] tensors with seq vals ~ 19 x 19
 
         # TODO: Repeat_elements and tf.split doesn't support dynamic splits.
         # conv_width_index = K.repeat_elements(conv_width_index, conv_dims[1], axis=0)
         conv_width_index = K.tile(
-            K.expand_dims(conv_width_index, 0), [conv_dims[0], 1])
+            K.expand_dims(conv_width_index, 0), [conv_dims[0], 1]) # k.tile (k.expand ~ 1x19, [19, 1] ) = i think this should be 19x19 ....
+
         conv_width_index = K.flatten(K.transpose(conv_width_index))
         conv_index = K.transpose(K.stack([conv_height_index, conv_width_index]))
         conv_index = K.reshape(conv_index, [1, conv_dims[0], conv_dims[1], 1, 2])
         conv_index = K.cast(conv_index, K.dtype(feats))
+
+        # Since I ordered labeled data as [x,y] need to order this data structure to match this ...
+        # conv_index = tf.transpose(conv_index, [0, 2, 1, 3, 4])
 
         feats = K.reshape(
             feats, [-1, conv_dims[0], conv_dims[1], num_anchors, num_classes + 5])
@@ -656,17 +698,20 @@ class yolo_demo(BaseException):
         # feats = Reshape(
         #     (conv_dims[0], conv_dims[1], num_anchors, num_classes + 5))(feats)
 
-        box_xy = K.sigmoid(feats[..., 0:2])
-        box_wh = K.exp(feats[..., 2:4])
+        box_grid01_xy = K.sigmoid(feats[..., 0:2])
+        box_grid01_wh = K.exp(feats[..., 2:4])
         box_confidence = K.sigmoid(feats[..., 4:5])
         box_class_probs = K.softmax(feats[..., 5:])
 
         # Adjust preditions to each spatial grid point and anchor size.
         # Note: YOLO iterates over height index before width index.
-        box_xy = (box_xy + conv_index) / conv_dims
-        box_wh = box_wh * anchors_tensor / conv_dims
+        conv_index = K.print_tensor(conv_index, message="conv_index is: ")
+        conv_dims = K.print_tensor(conv_dims, message="conv_dims is: ")
 
-        return box_xy, box_wh, box_confidence, box_class_probs
+        box_01_xy = (box_grid01_xy + conv_index) / conv_dims
+        box_01_wh = box_grid01_wh * anchors_tensor / conv_dims
+
+        return box_01_xy, box_01_wh, box_confidence, box_class_probs
 
     def yolo_eval(self, yolo_outputs, max_boxes=10, score_threshold=.5, iou_threshold=.5):
         """
@@ -722,16 +767,24 @@ class yolo_demo(BaseException):
             # Scale boxes back to original image shape.
             tmp_scaled_boxes_xy = scale_boxes(tmp_boxes_xy, self.image_shape)
 
-            # Use one of the functions you've implemented to perform Non-max suppression with a threshold of iou_threshold (≈1 line)
+            # Use one of the functions you've implemented to perform Non-max suppression with a threshold of iou_threshold (~1 line)
             ts,tb,tc = self.yolo_non_max_suppression(tmp_scores, tmp_scaled_boxes_xy, tmp_classes, max_boxes, iou_threshold)
 
 
 
-            # to return maximum probability at each grid location, need to loop thru anchor boxes too ...
+            # to return maximum probability at each grid location, need to loop thru anchor boxes too ... to do this, use stack function!
             # Get the most likely class here
-            tmp_grid_max_pc1 = K.argmax(tmp_box_class_probs,4) # select max class index amongst K classes .  still have multiple anchor boxes..
-            tmp_grid_max_pc1 = K.max(tmp_grid_max_pc1,3,keepdims=True) # select maximum across anchor boxes
-            tmp_grid_max_pc1 = K.cast(tmp_grid_max_pc1, "float32")
+            #tmp_grid_max_pc1 = K.reshape(tmp_box_class_probs,(-1,-1,-1,num_anchors*num_classes)) # stack across all anchor boxes ...
+
+            tmp_grid_max_amax1 = K.argmax(tmp_box_class_probs,4) # select max class index amongst K classes across all anchor boxes ...
+            tmp_grid_max_max1 = K.max(tmp_box_class_probs,4) #(1, 19, 19, 5)
+            tmp_grid_max_max2 = K.max(tmp_grid_max_max1,3) #(1, 19, 19)
+            tmp_grid_max_max2 = K.expand_dims(tmp_grid_max_max2,axis=3) # (1, 19, 19, 1)
+            tmp_grid_max_filt = tf.equal(tmp_grid_max_max1,tmp_grid_max_max2) # creates a boolean mask ..., only let right box thru
+            tmp_grid_max_boxhot = K.cast(tmp_grid_max_filt,dtype='float32') * K.cast(tmp_grid_max_amax1,dtype='float32' ) # only one of the 5 anchor box loc's should have a value
+            tmp_grid_max_pc1 = K.max(tmp_grid_max_boxhot,keepdims=True,axis=3) # select the max from a vector of all 0 and best anchor box
+
+
             # Glue Pc to most likely class (should be a mx19x19x2) tensor after completion
             tmp_grid_max_pc0 = K.max(tmp_confidence,3) # select maximum across anchor boxes 1x19x19x5x1 -> 1x19x19x1
             #tmp_grid_max_pc0 = K.max(tmp_grid_max_pc0,3) # select maximum across anchor boxes 1x19x19x1 -> 1x19x19
@@ -754,7 +807,7 @@ class yolo_demo(BaseException):
 
         return all_scores, all_boxes_xy, all_classes, all_grid_max_pc
 
-    def yolo_filter_boxes(self, box_confidence, boxes_xy, box_class_probs, threshold = .6):
+    def yolo_filter_boxes(self, box_confidence, boxes_xy, box_class_probs, threshold = 0.5):
         """Filters YOLO boxes by thresholding on object and class confidence.
         
         Arguments:
@@ -772,6 +825,7 @@ class yolo_demo(BaseException):
         For example, the actual output size of scores would be (10,) if there are 10 boxes.
         """
 
+        nprint("Filter threshold = {}".format(threshold))
         # Step 1: Compute box scores
         ### START CODE HERE ### (≈ 1 line)
         box_scores = box_confidence * box_class_probs
@@ -893,7 +947,7 @@ class yolo_demo(BaseException):
 
         return rv_rotated_image,rv_scaled_image
 
-    def shade_image_19_19(self, image_data_orig, out_grid_max_pc, colors, threshold=0.5) :
+    def shade_image_19_19(self, image_data_orig, out_grid_max_pc, colors, threshold=0.3) :
         '''
         stub for image mod ....
         '''
@@ -1327,7 +1381,7 @@ def scale_boxes(boxes_xy, image_shape):
     boxes_xy = boxes_xy * image_dims
     return boxes_xy
 
-def box_min_max_to_xcycwh( box_min_max, img_rows, img_cols) :
+def box_min_max_to_xcycwh( box_pix_min_max, img_rows, img_cols) :
     '''
     
     :param box_min_max: list of values, [xmin,xmax,w,h,class]
@@ -1335,19 +1389,19 @@ def box_min_max_to_xcycwh( box_min_max, img_rows, img_cols) :
     '''
     # Lets scale the boxes, and change coordinates from xmin,ymin, xmax, ymax to xcenter,ycenter, width, height
     # Change coordiantes
-    i=box_min_max
-    box_xy = [0.5 * (i[0]+i[2]), 0.5*(i[1]+i[3])]
-    box_wh = [i[2]-i[0],i[3] - i[1]]
+    i=box_pix_min_max
+    box_pix_xy = [0.5 * (i[0]+i[2]), 0.5*(i[1]+i[3])]
+    box_pix_wh = [i[2]-i[0],i[3] - i[1]]
 
     #Scale down to a value between 0 and 1
-    box_xy =  [box_xy[0]/img_cols,box_xy[1]/img_rows]
-    box_wh =  [box_wh[0]/img_cols,box_wh[1]/img_rows]
+    box_01_xy =  [box_pix_xy[0]/img_cols,box_pix_xy[1]/img_rows]
+    box_01_wh =  [box_pix_wh[0]/img_cols,box_pix_wh[1]/img_rows]
 
-    assert(box_xy[0] < 1.0)
-    assert(box_xy[1] < 1.0)
+    if(box_01_xy[0] >= 1.0 or box_01_xy[0] <= 0.0 or box_01_xy[1] >= 1.0 or box_01_xy[1] <= 0.0) :
+        nprint("box check failed {} {} {} {}".format(box_pix_min_max, img_rows, img_cols, box_01_xy))
 
-    box_xywhc = box_xy + box_wh + [box_min_max[4]]
-    return box_xywhc
+    box_01_xywhc = box_01_xy + box_01_wh + [box_pix_min_max[4]]
+    return box_01_xywhc
 
 def get_grid_location(box, grid_rows, grid_cols) :
     x = box[0]
@@ -1394,49 +1448,31 @@ def select_anchorbox_index(box_xywhc,anchor_list,conv_width,conv_height) :
     return best_anchor
 
 # Encoding box with numpy
-def encode_box_old(box_xywh, conv_width, conv_height, best_anchor) :
-    (x,y) = get_grid_location(box_xywh,conv_height,conv_width)
+# loss funciton wants box coordinates in encode space
+# => 01 => grid => grid01 => encoded!
+def box_01_to_encode(box_01_xywh, conv_width, conv_height, best_anchor) :
+    (x,y) = get_grid_location(box_01_xywh,conv_height,conv_width)
 
-    nprint("x={} y={} box_xywh={} conv_height={} conv_width={} best_anchor={}".format(x,y,box_xywh,conv_height,conv_width,best_anchor))
+    nprint("x={} y={} box_01_xywh={} conv_height={} conv_width={} best_anchor={}".format(x,y,box_01_xywh,conv_height,conv_width,best_anchor))
     # Centers of the box relative to the assigned grid cell only
     adjusted_box = np.array(
         [
-            inv_sigmoid(box_xywh[0]*conv_width - x), inv_sigmoid(box_xywh[1]*conv_height - y),
-            np.log(box_xywh[2] / best_anchor[0]),
-            np.log(box_xywh[3] / best_anchor[1])
+            inv_sigmoid(box_01_xywh[0]*conv_width - x),
+            inv_sigmoid(box_01_xywh[1]*conv_height - y),
+            np.log(box_01_xywh[2]*conv_width / best_anchor[0]),
+            np.log(box_01_xywh[3]*conv_height / best_anchor[1])
         ],
         dtype=np.float32)
     nprint("adjusted_box={}".format(adjusted_box))
 
-    assert(adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0 and adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0)
-    return adjusted_box
-
-def encode_box(box_xywh, conv_width, conv_height, best_anchor) :
-    (x,y) = get_grid_location(box_xywh,conv_height,conv_width)
-
-    nprint("x={} y={} box_xywh={} conv_height={} conv_width={} best_anchor={}".format(x,y,box_xywh,conv_height,conv_width,best_anchor))
-    # Centers of the box relative to the assigned grid cell only
-    adjusted_box = np.array(
-        [
-            box_xywh[0],box_xywh[1],box_xywh[2],box_xywh[3]
-        ],
-        dtype=np.float32)
-    nprint("adjusted_box={}".format(adjusted_box))
-
-    assert(adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0 and adjusted_box[0] > 0.0 and adjusted_box[0] < 1.0)
     return adjusted_box
 
 def inv_sigmoid(x) :
-    epsilon = 0.001
-    return np.log((x/(1-(x+epsilon))) + epsilon)
+    epsilon = 0.01
+    return np.log(((x/((1-x)+epsilon))) + epsilon)
 
 def sigmoid(x) :
     return 1/(1 + np.exp(-x))
-
-
-# Decoding box with Keras
-def decode_box(adjusted_box) :
-    a=1
 
 
 def plot_image(img) :
@@ -1533,7 +1569,14 @@ def infer_image(input_image, audit_mode=False,
     mydemo.process_image(output_image=output_image,with_grid=False)
 
 
-def retrain():
+def retrain(output_dir="./retrain_output2/",
+            weights="path_to_weights",
+            arch="path_to_arch",
+            class_file="./model_data/coco_classes.txt",
+            anchor_file="./model_data/yolo_anchors.txt",
+            retrain_file="./model_data/blank.json",
+            batch_size=8,frame_stride=30,
+            score_threshold=0.5, iou_threshold=0.5):
     '''
     Retrains model based on image set defined in preconfigured json file.  No video / image passed here
     :return: writes out new models in current working directory.  This can be cleaned up when working better
@@ -1547,9 +1590,9 @@ def retrain():
     #K.set_session(sess)
 
     mydemo = yolo_demo(sess)    
-    mydemo.class_names(read_classes("./retrain/clear_classes.txt"))
-    mydemo.anchors(read_anchors("./retrain/yolo_anchors.txt"))
-    mydemo.retrain_file("./retrain/labels.json")
+    mydemo.class_names(read_classes(class_file))
+    mydemo.anchors(read_anchors(anchor_file))
+    mydemo.retrain_file(retrain_file)
     mydemo.vi_mode("video")
     mydemo.retrain()
 
@@ -1563,38 +1606,57 @@ if __name__ == '__main__':
     #            audit_mode=False,
     #            output_dir="./output/",
     #            mode="darknet") # models/yolo.h5
-#
-    retrain()
 
-    infer_video(input_video="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
-          audit_mode=False,
-          output_dir="./retrain_output",
-          mode="retrained",
-          arch="retrain_arch.json",
-          weights="./model_wgts_retrain_stage2.h5",
-          class_file="./retrain/clear_classes.txt",
-          anchor_file="./retrain/yolo_anchors.txt",
-          score_threshold=0.3,
-          iou_threshold=0.7)
+    # Retrain Experiment on overhead cars in parking lot
+    retrain(output_dir="./experiments/overhead_cars/retrain_output",
+            class_file="./experiments/overhead_cars/classes.txt",
+            anchor_file="./experiments/overhead_cars/yolo_anchors.txt",
+            retrain_file="./experiments/overhead_cars/dustin/coco_labels.json")
+
+    ## Infer Image using retrained model
+    infer_image(input_image="./experiments/overhead_cars/overhead_pkg_lot.jpg",
+                output_image="./experiments/overhead_cars/overhead_pkg_lot_bbox.jpg",
+                audit_mode=False,
+                mode="retrained",
+                arch="retrain_arch.json",
+                weights="./model_wgts_retrain_stage2.h5",
+                class_file="./experiments/overhead_cars/classes.txt",
+                anchor_file="./experiments/overhead_cars/yolo_anchors.txt",
+                score_threshold=0.5)
+
+
+
+
+#    infer_video(input_video="/data/work/osa/2018-02-cleartechnologies-b8p021/crate_1min.mp4",
+#          audit_mode=False,
+#          output_dir="./retrain_output",
+#          mode="retrained",
+#          arch="retrain_arch.json",
+#          weights="./model_wgts_retrain_stage2.h5",
+#          class_file="./retrain/clear_classes.txt",
+#          anchor_file="./retrain/yolo_anchors.txt",
+#          score_threshold=0.3,
+#          iou_threshold=0.7)
 #
 
 
     ## Infer Image using retrained model
-    #infer_image(input_image="/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg",
+    #infer_image(input_image="/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-6.jpg",
     #            audit_mode=True,
     #            mode="retrained",
     #            arch="retrain_arch.json",
     #            weights="./model_wgts_retrain_stage2.h5",
     #            class_file="./retrain/clear_classes.txt",
-    #            anchor_file="./retrain/yolo_anchors.txt")
+    #            anchor_file="./retrain/yolo_anchors.txt",
+    #            score_threshold=0.5)
 
     # Infer Image using darknet model
 
-    #"/data/work/git-repos/mldl-101/lab4-yolo-keras/retrain/orig-5.jpg"
-    # "./images/wine-glass-sizes.jpg"
+    #input_image="./images/safari2.jpg",
+    #input_image="./images/overhead_pkg_lot.jpg",
 
-    #infer_image(input_image="./images/safari2.jpg",
-    #            output_image="./images/safari_boxes.jpg",
+    #infer_image(input_image="./images/overhead_pkg_lot.jpg",
+    #            output_image="./images/overhead_pkg_lot_bb.jpg",
     #            score_threshold=0.5,
     #            iou_threshold=0.5,
     #            max_boxes=15,
@@ -1603,7 +1665,15 @@ if __name__ == '__main__':
     #            mode="darknet")
 ##
 
-    
+'''
+Clear Tech Experiment
+    mydemo.class_names(read_classes("./retrain/clear_classes.txt"))
+    mydemo.anchors(read_anchors("./retrain/yolo_anchors.txt"))
+    mydemo.retrain_file("./retrain/labels.json")
+'''
+
+
+
 '''
 
    #input_stream = "./sampleVideos/ian.mov"

@@ -1,0 +1,6 @@
+[
+ {"image_id": "./retrain/orig-6.jpg", "category_id": 0, "category_name": "person", "bbox_xymin_xymax": [899.42724609375, 320.05389404296875, 982.2025756835938, 386.2587585449219], "score": 0.552032470703125},
+ {"image_id": "./retrain/orig-6.jpg", "category_id": 0, "category_name": "person", "bbox_xymin_xymax": [223.2116241455078, 117.03900909423828, 490.0059814453125, 427.5141296386719], "score": 0.4544816315174103},
+ {"image_id": "./retrain/orig-6.jpg", "category_id": 1, "category_name": "crates", "bbox_xymin_xymax": [128, 553, 219, 620], "score": 0.8049857020378113},
+ {"image_id": "./retrain/orig-6.jpg", "category_id": 2, "category_name": "forklift", "bbox_xymin_xymax": [192,384, 958, 788], "score": 0.8049857020378113}
+ ]

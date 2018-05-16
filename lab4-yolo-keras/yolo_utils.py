@@ -2,7 +2,6 @@ import colorsys
 import imghdr
 import os
 import random
-import cv2
 from keras import backend as K
 
 import numpy as np

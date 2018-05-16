@@ -1,0 +1,4 @@
+car
+empty_space
+person
+tree
