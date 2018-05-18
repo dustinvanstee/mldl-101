@@ -16,8 +16,8 @@
       <file leaf-file-name="yolo_demo.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/yolo_demo.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="183">
-              <caret line="522" column="48" lean-forward="false" selection-start-line="522" selection-start-column="48" selection-end-line="522" selection-end-column="48" />
+            <state relative-caret-position="276">
+              <caret line="223" column="35" lean-forward="false" selection-start-line="223" selection-start-column="18" selection-end-line="223" selection-end-column="35" />
               <folding>
                 <element signature="e#374#395#0" expanded="true" />
               </folding>
@@ -49,7 +49,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>create_labe</find>
       <find>yolo_loss</find>
       <find>draw_boxes</find>
       <find>yolo_evAL</find>
@@ -79,6 +78,7 @@
       <find>image_box01_dict</find>
       <find>pars</find>
       <find>box_min_max_to_xcycwh</find>
+      <find>retrain_arch.json</find>
     </findStrings>
   </component>
   <component name="GradleLocalSettings">
@@ -541,7 +541,7 @@
     </todo-panel>
   </component>
   <component name="ToolWindowManager">
-    <frame x="39" y="120" width="1881" height="973" extended-state="1" />
+    <frame x="39" y="120" width="1881" height="973" extended-state="0" />
     <editor active="true" />
     <layout>
       <window_info id="Palette" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
@@ -1025,8 +1025,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/yolo_demo.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="183">
-          <caret line="522" column="48" lean-forward="false" selection-start-line="522" selection-start-column="48" selection-end-line="522" selection-end-column="48" />
+        <state relative-caret-position="276">
+          <caret line="223" column="35" lean-forward="false" selection-start-line="223" selection-start-column="18" selection-end-line="223" selection-end-column="35" />
           <folding>
             <element signature="e#374#395#0" expanded="true" />
           </folding>
