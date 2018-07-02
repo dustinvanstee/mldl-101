@@ -544,7 +544,8 @@ class yolo_demo(BaseException):
         There will be a variable # of boxes per image passed back.  Followon routines will standardize into the 19x19 grid
         :return: 
         '''
-        boxes_image_ptr_json =open(self._retrain_file).read()
+        nprint("Opening labels file {}".format(self.retrain_file()))
+        boxes_image_ptr_json =open(self.retrain_file()).read()
         data = json.loads(boxes_image_ptr_json)
 
         # Return value ...
