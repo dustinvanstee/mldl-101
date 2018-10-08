@@ -1,0 +1,1 @@
+CLASS_ENVIRONMENT="nimbix" # dv-mac
