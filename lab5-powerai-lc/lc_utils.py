@@ -63,7 +63,6 @@ def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-l
     loanstats_csv_files = None
     if(CLASS_ENVIRONMENT == 'nimbix') :
         location='/dl-labs/mldl-101/lab5-powerai-lc/'
-        os.system
         nprint("Setting data location to {}".format(location))
         loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv.gz')  # 'LoanStats_secure*csv'
     else :
