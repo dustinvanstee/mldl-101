@@ -39,12 +39,12 @@ import operator
 from myenv import *
 
 print("CLASS_ENVIRONMENT = {}".format(CLASS_ENVIRONMENT))
-if(CLASS_ENVIRONMENT == 'nimbix') :
+if(CLASS_ENVIRONMENT == 'dv-mac') :
     from keras.layers import Input, Dense
     from keras.models import Model
     from keras import regularizers
     from keras.models import load_model
-elif(CLASS_ENVIRONMENT == 'dv-mac') :
+elif(CLASS_ENVIRONMENT == 'nimbix') :
     import tensorflow as tf
     from tensorflow.keras.layers import Input, Dense
     from tensorflow.keras.models import Model
