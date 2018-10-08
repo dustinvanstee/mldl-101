@@ -60,11 +60,14 @@ def nprint(mystring) :
 
 def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-loan-data/lendingclub.com/') :
     #For lab force LoanStats_securev1_2018Q1.csv
+    loanstats_csv_files = None
     if(CLASS_ENVIRONMENT == 'nimbix') :
         location='/dl-labs/mldl-101/lab5-powerai-lc/'
+        os.system
         nprint("Setting data location to {}".format(location))
-
-    loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv')  # 'LoanStats_secure*csv'
+        loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv.gz')  # 'LoanStats_secure*csv'
+    else :
+        loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv')  # 'LoanStats_secure*csv'
     loan_list = []
     for i in range(1) : #len(loanstats_csv_files)
         loan_list.append( pd.read_csv(loanstats_csv_files[i], index_col=None, header=1))
