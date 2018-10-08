@@ -31,18 +31,27 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-from keras.layers import Input, Dense
-from keras.models import Model
-from keras import regularizers
-from keras.models import load_model
 from collections import defaultdict
-
 import seaborn as sns
 from itertools import compress
 import itertools
 import operator
+from myenv import *
 
+print("CLASS_ENVIRONMENT = {}".format(CLASS_ENVIRONMENT))
+if(CLASS_ENVIRONMENT == 'nimbix') :
+    from keras.layers import Input, Dense
+    from keras.models import Model
+    from keras import regularizers
+    from keras.models import load_model
+elif(CLASS_ENVIRONMENT == 'dv-mac') :
+    import tensorflow as tf
+    from tensorflow.keras.layers import Input, Dense
+    from tensorflow.keras.models import Model
+    from tensorflow.keras import regularizers
+    from tensorflow.keras.models import load_model
+else :
+    print("ERROR loading myenv.py")
 
 
 # utility print function
@@ -51,6 +60,10 @@ def nprint(mystring) :
 
 def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-loan-data/lendingclub.com/') :
     #For lab force LoanStats_securev1_2018Q1.csv
+    if(CLASS_ENVIRONMENT == 'nimbix') :
+        location='/dl-labs/mldl-101/lab5-powerai-lc/'
+        nprint("Setting data location to {}".format(location))
+
     loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv')  # 'LoanStats_secure*csv'
     loan_list = []
     for i in range(1) : #len(loanstats_csv_files)
