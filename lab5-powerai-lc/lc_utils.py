@@ -36,15 +36,15 @@ import seaborn as sns
 from itertools import compress
 import itertools
 import operator
-from myenv import *
+import myenv as myenv
 
-print("CLASS_ENVIRONMENT = {}".format(CLASS_ENVIRONMENT))
-if(CLASS_ENVIRONMENT == 'dv-mac') :
+print("CLASS_ENVIRONMENT = {}".format(myenv.CLASS_ENVIRONMENT))
+if(myenv.CLASS_ENVIRONMENT == 'dv-mac') :
     from keras.layers import Input, Dense
     from keras.models import Model
     from keras import regularizers
     from keras.models import load_model
-elif(CLASS_ENVIRONMENT == 'nimbix') :
+elif(myenv.CLASS_ENVIRONMENT == 'nimbix') :
     import tensorflow as tf
     from tensorflow.keras.layers import Input, Dense
     from tensorflow.keras.models import Model
@@ -61,7 +61,7 @@ def nprint(mystring) :
 def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-loan-data/lendingclub.com/') :
     #For lab force LoanStats_securev1_2018Q1.csv
     loanstats_csv_files = None
-    if(CLASS_ENVIRONMENT == 'nimbix') :
+    if(myenv.CLASS_ENVIRONMENT == 'nimbix') :
         location='/dl-labs/mldl-101/lab5-powerai-lc/'
         nprint("Setting data location to {}".format(location))
         loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv.gz')  # 'LoanStats_secure*csv'
@@ -69,6 +69,7 @@ def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-l
         loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv')  # 'LoanStats_secure*csv'
     loan_list = []
     for i in range(1) : #len(loanstats_csv_files)
+        nprint("Loading {}".format(loanstats_csv_files[i]))
         loan_list.append( pd.read_csv(loanstats_csv_files[i], index_col=None, header=1))
         loan_df = pd.concat(loan_list,axis=0)
     return loan_df
@@ -115,7 +116,7 @@ def create_loan_default(df) :
 
 def clean_lendingclub_data(df) :
     nprint(" Running a couple routines to clean the data ...")
-    df = drop_sparse_numeric_columns(df)
+    df = drop_sparse_numeric_columns(df, threshold=0.025)
     nprint("Current DF shape = {}".format(df.shape))
     df = drop_columns(df)
     nprint("Current DF shape = {}".format(df.shape))
@@ -193,7 +194,8 @@ def drop_columns(df) :
     
     # there is information here .. imputer later (maybe based on GRADE ?)
     drop_nums = ['num_accts_ever_120_pd','num_actv_bc_tl','num_actv_rev_tl','num_bc_sats','num_bc_tl','num_il_tl','num_op_rev_tl','num_rev_accts','num_rev_tl_bal_gt_0','num_sats','num_tl_120dpd_2m','num_tl_30dpd','num_tl_90g_dpd_24m','num_tl_op_past_12m']
-    
+    drop_joint = ['verification_status_joint']
+
     df = df.drop(columns=drop_list,axis=1).\
             drop(columns=drop_dates,axis=1).\
             drop(columns=drop_nlp_cand,axis=1).\
@@ -201,7 +203,8 @@ def drop_columns(df) :
             drop(columns=drop_settles,axis=1).\
             drop(columns=drop_msince,axis=1).\
             drop(columns=drop_total,axis=1).\
-            drop(columns=drop_nums,axis=1)
+            drop(columns=drop_nums,axis=1).\
+            drop(columns=drop_joint,axis=1)
 
     nprint("Final number of columns = {}".format(len(df.columns)))
 
