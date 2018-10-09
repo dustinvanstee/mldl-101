@@ -116,12 +116,19 @@ def create_loan_default(df) :
 def clean_lendingclub_data(df) :
     nprint(" Running a couple routines to clean the data ...")
     df = drop_sparse_numeric_columns(df)
+    nprint("Current DF shape = {}".format(df.shape))
     df = drop_columns(df)
+    nprint("Current DF shape = {}".format(df.shape))
     df = impute_columns(df)
+    nprint("Current DF shape = {}".format(df.shape))
     df = handle_employee_length(df)
+    nprint("Current DF shape = {}".format(df.shape))
     df = handle_revol_util(df)
+    nprint("Current DF shape = {}".format(df.shape))
     df = drop_rows(df)
+    nprint("Current DF shape = {}".format(df.shape))
     return df
+
 
 # This function is only useful for numeric columns .  Essentially, run a describe, and
 # remove any amount of columns that have values <= a sparsity threshold
