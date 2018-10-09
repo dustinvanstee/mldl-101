@@ -597,7 +597,7 @@ class lendingclub_ml:
         btl_layer_str = 'dense_' + str(nl)
         nprint("Bottleneck Layer : {}".format(btl_layer_str))
 
-        ae_bottleneck_model = Model(input=self.ae_model.input, outputs=self.ae_model.get_layer(btl_layer_str).output)
+        ae_bottleneck_model = Model(inputs=self.ae_model.input, outputs=self.ae_model.get_layer(btl_layer_str).output)
         ae_bottleneck_model.summary()
 
         ae_encode = ae_bottleneck_model.predict(x=X_scaled)
