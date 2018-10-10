@@ -23,12 +23,11 @@ import shutil
 import subprocess
 
 import tensorflow as tf
-from keras import backend as K
-from keras.layers import Input, Lambda, Conv2D
-from keras.models import load_model, Model, model_from_json
-from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import Input, Lambda, Conv2D
+from tensorflow.keras.models import load_model, Model, model_from_json
+from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping
 from tensorflow.python import debug as tf_debug
-
 
 from yolo_utils import read_classes, read_anchors
 import random
