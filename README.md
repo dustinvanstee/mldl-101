@@ -31,19 +31,24 @@ Now select a Minsky server with one GPU.
 ![](https://github.com/dustinvanstee/random-public-files/raw/master/ss4.png)
 
 ---
-## Step 5 - Final Setup Step.  
+## Step 5 - Launch Jupyter  
 Next your server will be deployed, wait a coupled of moments and you will see the desktop of your server appear.
 1.  Copy the hostname and paste in a new brower window and postpend :5050 to open up your Jupyter Notebook.  
 ![](https://github.com/dustinvanstee/random-public-files/raw/master/ss8.png)
 
-![](https://github.com/dustinvanstee/random-public-files/raw/master/ss10.png)
 ---
+## Step 6 - Enter password
+![](https://github.com/dustinvanstee/random-public-files/raw/master/ss10.png)
+
+---
+## Step 6 - Open Notebooks and begin !
+
 ## You are now ready to proceed with the labs!
 
 **YOLO Lab** 
-   1. Start with Lab4-yolo-keras/Yololab.ipynb in your jupyter notebook
+   1. Start with **Lab4**-yolo-keras/Yololab.ipynb in your jupyter notebook
 
 **Hidden Patterns in AI lab**
-  1. Start with Lab5-powerai-lc/dv-00-LendingClub-TECHU.ipynb in your jupyter notebook
+  1. Start with **Lab5**-powerai-lc/dv-00-LendingClub-TECHU.ipynb in your jupyter notebook
 
 
