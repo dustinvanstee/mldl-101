@@ -36,6 +36,7 @@ Next your server will be deployed, wait a coupled of moments and you will see th
 1.  Copy the hostname and paste in a new brower window and postpend :5050 to open up your Jupyter Notebook.  
 ![](https://github.com/dustinvanstee/random-public-files/raw/master/ss8.png)
 
+![](https://github.com/dustinvanstee/random-public-files/raw/master/ss10.png)
 ---
 ## You are now ready to proceed with the labs!
 
