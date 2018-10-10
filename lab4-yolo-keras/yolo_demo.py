@@ -671,11 +671,11 @@ class yolo_demo(BaseException):
         # In YOLO the height index is the inner most iteration.
         conv_height_index = K.arange(0, stop=conv_dims[0]) # creates a 1D tensor [0:18] with vals [0,1,2...]
         conv_width_index = K.arange(0, stop=conv_dims[1])  # creates a 1D tensor [0:18] with vals [0,1,2...]
-        conv_height_index = K.tile(conv_height_index, [conv_dims[1]]) # creates 19 [0:18] tensors with seq vals ~ 19 x 19
+        conv_height_index = tf.manip.tile(conv_height_index, [conv_dims[1]]) # creates 19 [0:18] tensors with seq vals ~ 19 x 19
 
         # TODO: Repeat_elements and tf.split doesn't support dynamic splits.
         # conv_width_index = K.repeat_elements(conv_width_index, conv_dims[1], axis=0)
-        conv_width_index = K.tile(
+        conv_width_index = tf.manip.tile(
             K.expand_dims(conv_width_index, 0), [conv_dims[0], 1]) # k.tile (k.expand ~ 1x19, [19, 1] ) = i think this should be 19x19 ....
 
         conv_width_index = K.flatten(K.transpose(conv_width_index))
