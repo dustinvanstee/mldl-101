@@ -74,7 +74,7 @@ def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-l
         loan_df = pd.concat(loan_list,axis=0)
     return loan_df
 
-def quick_overview(loan_df) :
+def quick_overview_1d(loan_df) :
     nprint("There are " + str(len(loan_df)) + " observations in the dataset.")
     nprint("There are " + str(len(loan_df.columns)) + " variables in the dataset.")
 
@@ -89,6 +89,21 @@ def quick_overview(loan_df) :
     nprint("\n******************Dataset Descriptive Statistics (numerical columns only) *****************************\n")
     print(" running df.describe() ....")
     return loan_df.describe()
+
+def quick_overview_2d(loan_df, cols) :
+    nprint("There are " + str(len(loan_df)) + " observations in the dataset.")
+    nprint("There are " + str(len(loan_df.columns)) + " variables in the dataset.")
+
+    df = loan_df[cols]
+    corr_df = df.corr()
+    # plot the heatmap
+    sns.set_style(style = 'white')
+    # Add diverging colormap from red to blue
+    cmap = sns.diverging_palette(250, 10, as_cmap=True)
+    sns.heatmap(corr_df, cmap=cmap,
+        xticklabels=corr_df.columns,
+        yticklabels=corr_df.columns,vmin=-1.0,vmax=1.0)
+
 
 def create_loan_default(df) :
     # use a lamba function to encode multiple loan_status entries into a single 1/0 default variable
@@ -476,7 +491,7 @@ class lendingclub_ml:
         # plot the 95% threshold, so we can read off count of principal components that matter
         plt.plot(bin, [.95]*n_components, '--')
         plt.plot(bin, [.75]*n_components, '--')
-        plt.plot(bin, [.67]*n_components, '--')
+        plt.plot(bin, [.50]*n_components, '--')
         #turn on grid to make graph reading easier
         plt.grid(True)
         #plt.rcParams.update({'font.size': 24})
