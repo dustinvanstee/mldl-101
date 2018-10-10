@@ -2,7 +2,8 @@ import colorsys
 import imghdr
 import os
 import random
-from keras import backend as K
+import tensorflow as tf
+from tensorflow.keras import backend as K
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
