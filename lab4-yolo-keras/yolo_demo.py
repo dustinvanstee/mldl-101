@@ -23,10 +23,11 @@ import shutil
 import subprocess
 
 import tensorflow as tf
-from tensorflow.keras import backend as K
-from tensorflow.keras.layers import Input, Lambda, Conv2D
-from tensorflow.keras.models import load_model, Model, model_from_json
-from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping
+from tensorflow import keras
+from keras import backend as K
+from keras.layers import Input, Lambda, Conv2D
+from keras.models import load_model, Model, model_from_json
+from keras.callbacks import TensorBoard, ModelCheckpoint, EarlyStopping
 from tensorflow.python import debug as tf_debug
 
 from yolo_utils import read_classes, read_anchors
@@ -275,7 +276,7 @@ class yolo_demo(BaseException):
                               y=np.zeros(len(image_X)),
                               validation_split=0.0,
                               batch_size=32,
-                              epochs=300,
+                              epochs=100,
                               callbacks=[logging])
 
         nprint("Stage2 Training Complete .  Writing model_wgts_retrain_stage2.h5")
@@ -671,11 +672,11 @@ class yolo_demo(BaseException):
         # In YOLO the height index is the inner most iteration.
         conv_height_index = K.arange(0, stop=conv_dims[0]) # creates a 1D tensor [0:18] with vals [0,1,2...]
         conv_width_index = K.arange(0, stop=conv_dims[1])  # creates a 1D tensor [0:18] with vals [0,1,2...]
-        conv_height_index = tf.manip.tile(conv_height_index, [conv_dims[1]]) # creates 19 [0:18] tensors with seq vals ~ 19 x 19
+        conv_height_index = K.tile(conv_height_index, [conv_dims[1]]) # creates 19 [0:18] tensors with seq vals ~ 19 x 19
 
         # TODO: Repeat_elements and tf.split doesn't support dynamic splits.
         # conv_width_index = K.repeat_elements(conv_width_index, conv_dims[1], axis=0)
-        conv_width_index = tf.manip.tile(
+        conv_width_index = K.tile(
             K.expand_dims(conv_width_index, 0), [conv_dims[0], 1]) # k.tile (k.expand ~ 1x19, [19, 1] ) = i think this should be 19x19 ....
 
         conv_width_index = K.flatten(K.transpose(conv_width_index))

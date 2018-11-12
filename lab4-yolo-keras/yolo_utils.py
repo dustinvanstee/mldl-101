@@ -3,7 +3,8 @@ import imghdr
 import os
 import random
 import tensorflow as tf
-from tensorflow.keras import backend as K
+from tensorflow import keras
+from keras import backend as K
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
