@@ -10,7 +10,9 @@ from datetime import datetime
 import math
 
 import pandas as pd
-from pandas import scatter_matrix
+#from pandas import scatter_matrix
+from pandas.plotting import scatter_matrix
+
 
 #pd.set_option('display.height', 1000)
 pd.set_option('display.max_rows', 500)
@@ -50,6 +52,12 @@ elif(myenv.CLASS_ENVIRONMENT == 'nimbix') :
     from tensorflow.keras.models import Model
     from tensorflow.keras import regularizers
     from tensorflow.keras.models import load_model
+elif(myenv.CLASS_ENVIRONMENT == 'acc') :
+    import tensorflow as tf
+    from tensorflow.python.keras.layers import Input, Dense
+    from tensorflow.python.keras.models import Model
+    from tensorflow.python.keras import regularizers
+    from tensorflow.python.keras.models import load_model
 else :
     print("ERROR loading myenv.py")
 
@@ -65,9 +73,14 @@ def load_sample_data(location='/data/work/osa/2018-04-lendingclub/lending-club-l
         location='/dl-labs/mldl-101/lab5-powerai-lc/'
         nprint("Setting data location to {}".format(location))
         loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv.gz')  # 'LoanStats_secure*csv'
+    elif(myenv.CLASS_ENVIRONMENT == 'acc') :
+        location='./'
+        nprint("Setting data location to {}".format(location))
+        loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv.gz')  # 'LoanStats_secure*csv'
     else :
         loanstats_csv_files = glob.glob(location + 'LoanStats_securev1_2016Q1*csv')  # 'LoanStats_secure*csv'
     loan_list = []
+    nprint("CSV files = {}".format(loanstats_csv_files))
     for i in range(1) : #len(loanstats_csv_files)
         nprint("Loading {}".format(loanstats_csv_files[i]))
         loan_list.append( pd.read_csv(loanstats_csv_files[i], index_col=None, header=1))
