@@ -1,3 +1,1 @@
-# IBM Systems Technical University - TechU (Atlanta, GA)
-
-
+# Labs for MLDL eduction [deprecated]
